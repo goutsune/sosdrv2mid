@@ -231,7 +231,7 @@ def main():
   note_len_tbl = data[NOTE_LEN_OFFSET:NOTE_LEN_OFFSET+0x31]
 
   # Extract 8 tracks ranging from 1 to 8
-  for track in range(0, 2):
+  for track in range(0, 8):
     address = TRACK_PTR_LIST + track*2
     ptr = unpack('<H', data[address:address+2])[0]
 
