@@ -134,59 +134,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index += 1
 
     # C2 Stub, 2 bytes
-    elif cmd == 0xc2:
-      index += 2
-
-    # C3 Stub, 2 bytes
-    elif cmd == 0xc3:
-      index += 2
-
-    # C4 Stub, 2 bytes
-    elif cmd == 0xc4:
-      index += 2
-
-    # C5 Stub, 2 bytes
-    elif cmd == 0xc5:
-      index += 2
-
-    # C6 Stub, 2 bytes
-    elif cmd == 0xc6:
-      index += 2
-
-    # C7 Stub, 2 bytes
-    elif cmd == 0xc7:
-      index += 2
-
-    # C8 Stub, 2 bytes
-    elif cmd == 0xc8:
-      index += 2
-
-    # C9 Stub, 2 bytes
-    elif cmd == 0xc9:
-      index += 2
-
-    # CA Stub, 2 bytes
-    elif cmd == 0xca:
-      index += 2
-
-    # CB Stub, 2 bytes
-    elif cmd == 0xcb:
-      index += 2
-
-    # CC Stub, 2 bytes
-    elif cmd == 0xcc:
-      index += 2
-
-    # CD Stub, 2 bytes
-    elif cmd == 0xcd:
-      index += 2
-
-    # CE Stub, 2 bytes
-    elif cmd == 0xce:
-      index += 2
-
-    # CF Stub, 2 bytes
-    elif cmd == 0xcf:
+    elif cmd < 0xd0 and cmd > 0x7f:
+      print('Function {:02X} unimplemented. arg: {:02x}'.format(
+        cmd,
+        track_data[index+1]))
       index += 2
 
     # D0~FF - Notes
