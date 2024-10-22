@@ -216,10 +216,13 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
           note_param_done = True
           index += 1
 
-        elif not velocity_set:
-          velocity = param - 0x31
+        elif param > 0x31 and not velocity_set:
+          velocity = int((param - 0x31) / 0x4d * 0x7f)
           velocity_set = True
           index += 1
+
+        else:
+          note_param_done = True
 
       _octave = note // 12
       _base_n = note % 12
@@ -250,7 +253,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         reuse_cmd = False
         cur_tick += note_len
 
-    elif cmd <= 0x7f:
+    elif cmd < 0x32:  # A wild guess here, everything in $32~$7F range seems to do nothing?
       reuse_cmd = True
       print('Cmd < $80, will execute {:02x} {:02x}'.format(last_note_cmd, cmd))
 
@@ -277,7 +280,7 @@ def main():
   note_len_tbl = data[NOTE_LEN_OFFSET:NOTE_LEN_OFFSET+0x31]
 
   # Extract 8 tracks ranging from 1 to 8
-  for track in range(0,3):
+  for track in range(0, 2):
     address = TRACK_PTR_LIST + track*2
     ptr = unpack('<H', data[address:address+2])[0]
 
