@@ -41,7 +41,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
       note_len = note_lengths[cmd - 0x7f - 1]
       note_length_changed = True
-      print('Set note len to {}'.format(note_len))
+      # print('Set note len to {}'.format(note_len))
 
       index += 1
 
@@ -107,7 +107,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     # BF Rest
     elif cmd == 0xbf:
-      print(f'Playing RST len: {note_len}')
+      # print(f'Playing RST len: {note_len}')
 
       cur_tick += note_len
       index += 1
@@ -120,8 +120,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       _timer_div = 5000 / _arg  # $1388/X in driver
 
       speed = 8000 / _timer_div # Speed in Hz
-      print(f'Set timer speed to {speed}Hz')
-      midi.addTempo(track, cur_tick, speed*1.2)
+      print(f'Set timer speed to {speed}Hz ~{speed * 1.3} BPM?')
+      midi.addTempo(track, cur_tick, speed * 1.3)  # Beware, magic number
       index += 1
 
     # C1 Set instrument
@@ -182,12 +182,12 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # current note without retriggering it
       if not reuse_cmd:
 
-        print('Playing {}{} len: {} cut: {} vol: {}'.format(
-          NOTES[_base_n],
-          _octave,
-          note_len,
-          note_cut,
-          velocity))
+        # print('Playing {}{} len: {} cut: {} vol: {}'.format(
+          # NOTES[_base_n],
+          # _octave,
+          # note_len,
+          # note_cut,
+          # velocity))
 
         if note_cut:
           _len = note_cut
@@ -206,7 +206,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     elif cmd < 0x32:  # A wild guess here, everything in $32~$7F range seems to do nothing?
       reuse_cmd = True
-      print('Cmd < $80, will execute {:02x} {:02x}'.format(last_note_cmd, cmd))
+      print('Cmd < $32, will execute {:02x} {:02x}'.format(last_note_cmd, cmd))
 
     else:
       print('Got unknown command {:02x}'.format(cmd))
