@@ -37,7 +37,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       cmd = last_note_cmd
 
     # 80~AF Note length
-    if cmd > 0x7f and cmd < 0xb0:
+    if cmd > 0x7f and cmd <= 0xb0:
       # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
       note_len = note_lengths[cmd - 0x7f - 1]
       note_length_changed = True
