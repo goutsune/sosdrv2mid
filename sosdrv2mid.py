@@ -162,7 +162,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
           continue
 
         if param <= 0x31 and not note_cut_set:
-          note_cut = param
+          note_cut = note_lengths[param]
           note_cut_set = True
           note_param_done = True
           index += 1
