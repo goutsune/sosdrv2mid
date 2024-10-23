@@ -36,11 +36,12 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     if not reuse_cmd:
       cmd = track_data[index]
     else:
-      cmd = last_note_cmd
+      cmd = last_cmd
 
     # Store last command in buffer to reuse for shorthands
     if cmd > 0xbf and not reuse_cmd:
-      last_note_cmd = cmd
+      last_cmd = cmd
+
 
     # 80~AF Note length
     if cmd > 0x7f and cmd <= 0xb0:
@@ -309,7 +310,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       reuse_cmd = True
       print('{:5d}: Cmd < $7F, will execute {:02x} {:02x}'.format(
         cur_tick,
-        last_note_cmd,
+        last_cmd,
         cmd))
 
     else:
