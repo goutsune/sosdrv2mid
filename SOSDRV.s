@@ -604,11 +604,12 @@ ProcNoteTick:
 0b49: 8d 00     mov   y,#TRACK_STATUS
 0b4b: f7 10     mov   a,(CHAN_PTR)+y    ; Load track status
 0b4d: c4 12     mov   CUR_TRACK_STAT,a  ; Store
-0b4f: f3 12 08  bbc7  CUR_TRACK_STAT,SetNextTrack    ; If bit 7 is not set, jump to next track
-0b52: 3f 61 0b  call  ProcessSeqData
-0b55: 2f ec     bra   ProcNoteTick
-0b57: 9c        dec   a
-0b58: d7 10     mov   (CHAN_PTR)+y,a
+0b4f: f3 12 08  bbc7  CUR_TRACK_STAT,SetNextTrack ; b7 means the note still plays!
+0b52: 3f 61 0b  call  ProcessSeqData    ; Now we want to process sequence data if note is
+0b55: 2f ec     bra   ProcNoteTick      ; still playing, to modify its state at reload rate
+
+0b57: 9c        dec   a                 ; Otherwise decrease counter and
+0b58: d7 10     mov   (CHAN_PTR)+y,a    ; save it back to counter
 
 SetNextTrack:
 0b5a: 3f b8 08  call  SetNextChanPtr
