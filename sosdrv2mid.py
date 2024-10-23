@@ -267,27 +267,30 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       _octave = note // 12
       _base_n = note % 12
 
+      if note_cut:
+        _len = note_cut
+      elif note_length_changed:
+        _len = note_len + note_cut + note_cut
+        note_length_changed = False
+      else:
+        _len = note_len + note_cut
+
       # Let me take a while guess here. Reused params will add ticks to
       # current note without retriggering it
       if not reuse_cmd:
 
         if verbose:
           print('{:5d}: Playing {}{} len: {} cut: {} vol: {}'.format(
-            cur_tick,
-            NOTES[_base_n],
-            _octave,
-            note_len,
-            note_cut,
-            velocity))
+            cur_tick, NOTES[_base_n], _octave, note_len, note_cut, velocity))
 
-        if note_cut:
-          _len = note_cut
-        elif note_length_changed:
-          _len = note_len + note_cut + note_cut
-          note_length_changed = False
-        else:
-          _len = note_len + note_cut
+        midi.addNote(track, track, note, cur_tick, _len, velocity)
+        cur_tick += note_len
 
+      elif reuse_cmd and velocity_set:
+        reuse_cmd = False
+        if verbose:
+          print('{:5d}: Re-playing {}{} len: {} cut: {} vol: {}'.format(
+            cur_tick, NOTES[_base_n], _octave, note_len, note_cut, velocity))
 
         midi.addNote(track, track, note, cur_tick, _len, velocity)
         cur_tick += note_len
@@ -295,9 +298,11 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         reuse_cmd = False
         cur_tick += note_len
 
-    elif cmd < 0x32:  # A wild guess here, everything in $32~$7F range seems to do nothing?
+    elif cmd < 0x80:
+      # This will pass down current byte to CMD we stored before,
+      # can be CX, or note command
       reuse_cmd = True
-      print('{:5d}: Cmd < $32, will execute {:02x} {:02x}'.format(
+      print('{:5d}: Cmd < $7F, will execute {:02x} {:02x}'.format(
         cur_tick,
         last_note_cmd,
         cmd))
