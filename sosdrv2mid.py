@@ -29,6 +29,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   echo_delay = 0
   echo_feedback = 0
 
+  verbose = True  # Log notes, rests and length changes
+
 
   while not done:
     if not reuse_cmd:
@@ -41,26 +43,33 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
       note_len = note_lengths[cmd - 0x7f - 1]
       note_length_changed = True
-      # print('Set note len to {}'.format(note_len))
+
+      if verbose:
+        print('{:5d}: Set note len to {}'.format(cur_tick, note_len))
 
       index += 1
 
     # B5 Set loop start
     elif cmd == 0xb5:
       index +=1
-      print('Set Restart to {:04X}'.format(ptr+index))
+      print('{:5d}: Set Restart to {:04X}'.format(
+        cur_tick,
+        ptr+index))
 
     # B6 End / loop end
     elif cmd == 0xb6:
-      print('Reached end of track at {:04X}!'.format(ptr+index))
-      print('===============================\n\n')
+      print('Reached end of track {} at {:04X}!'.format(track+1, ptr+index))
+      print('================================\n')
       done = True
 
     # BA Set Note offset
     elif cmd == 0xba:
       index += 1
       note_offset = track_data[index] - 0x40  # no carry bug this time
-      print(f'Set note offset to {note_offset}')
+      print('{:5d}: Set note offset to {}'.format(
+        cur_tick,
+        note_offset
+      ))
       index += 1
 
     # BB Set Echo
@@ -80,7 +89,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index += 1
       echo_feedback = track_data[index]
 
-      print('Set echo vol:{} del:{} fdb:{}'.format(
+      # TODO: Pass this as reverb level to channel, maybe?
+      print('{:5d}: Set echo vol:{} del:{} fdb:{}'.format(
+        cur_tick,
         echo_vol,
         echo_delay,
         echo_feedback))
@@ -90,7 +101,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     elif cmd == 0xb8:
       index += 1
       param = track_data[index]
-      print('Set track status low: {:02X}'.format(param))
+      print('{:5d}: Set track status low: {:02X}'.format(
+        cur_tick,
+        param))
       index += 1
 
     # BC Set track status bit 4
@@ -99,15 +112,22 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index +=1
       param = track_data[index]
       if param == 0x7f:
-        print('Set track status to note-off')
+        print('{:5d}: Set track status to note-off'.format(
+          cur_tick))
       else:
-        print('Unknown track status argument: {:02X}'.format(param))
+        print('{:5d}: Unknown track status argument: {:02X}'.format(
+          cur_tick,
+          param))
 
       index +=1
 
     # BF Rest
     elif cmd == 0xbf:
-      # print(f'Playing RST len: {note_len}')
+      if verbose:
+        print('{:5d}: Rest len: {}'.format(
+          cur_tick,
+          note_len
+        ))
 
       cur_tick += note_len
       index += 1
@@ -120,8 +140,12 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       _timer_div = 5000 / _arg  # $1388/X in driver
 
       speed = 8000 / _timer_div # Speed in Hz
-      print(f'Set timer speed to {speed}Hz ~{speed * 1.3} BPM?')
-      midi.addTempo(track, cur_tick, speed * 1.3)  # Beware, magic number
+      print('{:5d}: Set timer speed to {}Hz ~{} BPM?'.format(
+        cur_tick,
+        speed,
+        speed *1.2
+      ))
+      midi.addTempo(track, cur_tick, speed * 1.2)  # Beware, magic number
       index += 1
 
     # C1 Set instrument
@@ -129,13 +153,17 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # C1 XX
       index += 1
       instrument = track_data[index]
-      print(f'Set instrument to {instrument}')
+      print('{:5d}: Set instrument to {}'.format(
+        cur_tick,
+        instrument
+      ))
       midi.addProgramChange(track, track, cur_tick, instrument)
       index += 1
 
     # C2 Stub, 2 bytes
     elif cmd < 0xd0 and cmd > 0x7f:
-      print('Function {:02X} unimplemented. arg: {:02x}'.format(
+      print('{:5d}: Function {:02X} unimplemented. arg: {:02x}'.format(
+        cur_tick,
         cmd,
         track_data[index+1]))
       index += 2
@@ -182,12 +210,14 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # current note without retriggering it
       if not reuse_cmd:
 
-        # print('Playing {}{} len: {} cut: {} vol: {}'.format(
-          # NOTES[_base_n],
-          # _octave,
-          # note_len,
-          # note_cut,
-          # velocity))
+        if verbose:
+          print('{:5d}: Playing {}{} len: {} cut: {} vol: {}'.format(
+            cur_tick,
+            NOTES[_base_n],
+            _octave,
+            note_len,
+            note_cut,
+            velocity))
 
         if note_cut:
           _len = note_cut
@@ -206,10 +236,15 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     elif cmd < 0x32:  # A wild guess here, everything in $32~$7F range seems to do nothing?
       reuse_cmd = True
-      print('Cmd < $32, will execute {:02x} {:02x}'.format(last_note_cmd, cmd))
+      print('{:5d}: Cmd < $32, will execute {:02x} {:02x}'.format(
+        cur_tick,
+        last_note_cmd,
+        cmd))
 
     else:
-      print('Got unknown command {:02x}'.format(cmd))
+      print('{:5d}: Got unknown command {:02x}'.format(
+        cur_tick,
+        cmd))
       index += 1
 
 
@@ -232,8 +267,12 @@ def main():
 
   # Extract 8 tracks ranging from 1 to 8
   for track in range(0, 8):
+
     address = TRACK_PTR_LIST + track*2
     ptr = unpack('<H', data[address:address+2])[0]
+
+    print('\nBegin processing track {} at {:04X}'.format(track+1, ptr))
+    print('================================')
 
     result = process_track(
       data[ptr:],
