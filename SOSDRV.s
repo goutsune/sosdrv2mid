@@ -84,10 +84,12 @@ TRACK_STATUS = $00  ; Track status
 RAW_CMD      = $01  ; Raw command value is written here // ALSO STORES TIMER DIVIDER
 SEQ_PTR      = $02  ; 16b, points to next command to read
 SEQ_PTR_HI   = $03  ; 16b, points to next command to read
-REMAIN_LEN   = $04  ; counts down, new cmd is fetched if 0
-NOTE_LEN     = $05  ; Number of ticks to wait before loading next event
+REMAIN_LEN   = $04  ; Countdown for event reload
+RELOAD_PERIOD= $05  ; Number of ticks to wait before loading next event
 REMAIN_CUT   = $06  ; Counts down, sets channel status to 90 and cuts sound early
-NOTE_CUT     = $07  ; Number of ticks to wait before cuttin curent note, does not load next event
+NOTE_LEN     = $07  ; Number of ticks to wait before sending note off event
+                    ; This one can be cut by rest events and new note events
+                    ; which are read when reload period reaches zero!
 NOTE_NUM     = $08  ; Decoded note number for lookup
 NOTE_VEL     = $09  ; Note velocity, used when writing volume register
 COARSE_TUNE  = $0a  ; Adds semitones to current note, signed
@@ -650,7 +652,7 @@ SetNoteLength:
 0b99: f0 04     beq   $0b9f             ; if $1f is set, our argument IS in ticks
 0b9b: 5d        mov   x,a               ;   `-.
 0b9c: f5 ac 10  mov   a,NoteLenTbl+x    ;  oth|erwise load note len from lookup table
-0b9f: 8d 05     mov   y,#NOTE_LEN       ; <--´
+0b9f: 8d 05     mov   y,#RELOAD_PERIOD  ; <--´
 0ba1: d7 10     mov   (CHAN_PTR)+y,a
 0ba3: 5f b7 0b  jmp   UpdateSeqPtr
 
@@ -667,7 +669,7 @@ AddCmdLenResetNoteTicks:
 0bad: ab 16     inc   CMD_PARAM_OFC
 
 ResetNoteTicks:   ; So this will let the note keep playing longer
-0baf: 8d 05     mov   y,#NOTE_LEN       ; Note Len
+0baf: 8d 05     mov   y,#RELOAD_PERIOD  ; Note Len
 0bb1: f7 10     mov   a,(CHAN_PTR)+y    ; A = Note length
 0bb3: 8d 04     mov   y,#REMAIN_LEN     ; Remaining note length
 0bb5: d7 10     mov   (CHAN_PTR)+y,a    ; REMAIN_LEN = A
@@ -1026,7 +1028,7 @@ ProcessNoteCmd:
 0de9: 03 d8 1a  bbs0  $d8,$0e06         ; If bit 0 at $d8 is set, jump
 0dec: 02 d8     set0  $d8               ; Set bit 0 at $d8, param is < $31
 0dee: ab 16     inc   CMD_PARAM_OFC
-0df0: 8d 07     mov   y,#NOTE_CUT       ; No need to substract, store as note cut
+0df0: 8d 07     mov   y,#NOTE_LEN       ; No need to substract, store as note cut
 0df2: d7 10     mov   (CHAN_PTR)+y,a
 0df4: 2f e9     bra   $0ddf
 
@@ -1046,7 +1048,7 @@ ProcessNoteCmd:
 0e0d: d0 02     bne   $0e11             ; A and jump if note cut timer is 0
 0e0f: a2 12     set5  CUR_TRACK_STAT    ; bit5 - cut timer nonzero?
 
-0e11: 8d 07     mov   y,#NOTE_CUT
+0e11: 8d 07     mov   y,#NOTE_LEN
 0e13: f7 10     mov   a,(CHAN_PTR)+y
 0e15: 78 01 1f  cmp   DIRECT_TICK,#$01  ; Set by DirectNoteLen
 0e18: f0 04     beq   $0e1e             ; Jump if != 1

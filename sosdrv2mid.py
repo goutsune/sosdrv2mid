@@ -18,7 +18,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   cur_tick = 0
   cmd = None
   reuse_cmd = False
-  note_length_changed = False  # I think this is not needed
+  refresh_changed = False  # I think this is not needed
   tick_advance = 0 # This is to keep track where to put CX command result.
                    # It seems to matter for C2 the most, not sure other
                    # commands care about it
@@ -26,8 +26,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   note = 0
   note_offset = 0
   cut = 0
-  note_len = 0
-  note_cut = 0
+  refresh_step = 0
+  note_length = 0
   velocity = 0
   instrument = 0
   tempo = 0
@@ -53,15 +53,15 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     if cmd > 0x7f and cmd <= 0xb0:
       # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
       if direct_tick_len:
-        note_len = cmd - 0x7f - 1
+        refresh_step = cmd - 0x7f - 1
       else:
-        note_len = note_lengths[cmd - 0x7f - 1]
+        refresh_step = note_lengths[cmd - 0x7f - 1]
 
       # Store this, just in case....
-      note_length_changed = True
+      refresh_changed = True
 
       if verbose:
-        print('{:5d}: Set note len to {}'.format(cur_tick, note_len))
+        print('{:5d}: Set period to {} ticks'.format(cur_tick, refresh_step))
 
       index += 1
 
@@ -146,10 +146,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       if verbose:
         print('{:5d}: Extend len: {}'.format(
           cur_tick,
-          note_len
+          refresh_step
         ))
 
-      cur_tick += note_len
+      cur_tick += refresh_step
       index += 1
 
     # BE Set direct tick mode
@@ -166,10 +166,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       if verbose:
         print('{:5d}: Rest len: {}'.format(
           cur_tick,
-          note_len
+          refresh_step
         ))
 
-      cur_tick += note_len
+      cur_tick += refresh_step
       index += 1
 
     # ####################### CX commands
@@ -311,7 +311,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       note = cmd - 0xd0 + note_offset + 36  # Transpose by 3 octaves, seems to be correct
       # Read optional parameters for this note
       note_param_done = False
-      note_cut_set = False
+      note_length_set = False
       velocity_set = False
       tick_advance = 0
 
@@ -326,10 +326,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
         # So note cut can be in 0-0x30 range.
         # TODO: Value of 0 enables legato!
-        if param < 0x31 and not note_cut_set:
+        if param < 0x31 and not note_length_set:
           # Note cut parameter is set in ticks, always directly
-          note_cut = param
-          note_cut_set = True
+          note_length = param
+          note_length_set = True
           note_param_done = True
           index += 1
 
@@ -344,13 +344,13 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       _octave = note // 12
       _base_n = note % 12
 
-      if note_cut:
-        _len = note_cut
-      elif note_length_changed:  # I don't remember why I did this…
-        _len = note_len + note_cut + note_cut
-        note_length_changed = False
+      if note_length:
+        _len = note_length
+      elif refresh_changed:  # I don't remember why I did this…
+        _len = refresh_step + note_length + note_length
+        refresh_changed = False
       else:
-        _len = note_len #+ note_cut
+        _len = refresh_step #+ note_length
 
       # Let me take a while guess here. Reused params will add ticks to
       # current note without retriggering it
@@ -358,24 +358,24 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
         if verbose:
           print('{:5d}: Playing {}{} len: {} cut: {} vol: {}'.format(
-            cur_tick, NOTES[_base_n], _octave, note_len, note_cut, velocity))
+            cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
 
         midi.addNote(track, track, note, cur_tick, _len, velocity)
-        cur_tick += note_len
+        cur_tick += refresh_step
 
       elif reuse_cmd and velocity_set:
         reuse_cmd = False
         if verbose:
           print('{:5d}: Re-playing {}{} len: {} cut: {} vol: {}'.format(
-            cur_tick, NOTES[_base_n], _octave, note_len, note_cut, velocity))
+            cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
 
         midi.addNote(track, track, note, cur_tick, _len, velocity)
-        cur_tick += note_len
+        cur_tick += refresh_step
 
       else:
 
         reuse_cmd = False
-        cur_tick += note_len
+        cur_tick += refresh_step
 
     # ################## Shorthand commands
 
