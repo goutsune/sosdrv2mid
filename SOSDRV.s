@@ -57,6 +57,7 @@ CMD_PARAM_OFC = $16  ; Used to read next bytes from sequences as current command
 DRV_FLAGS     = $17  ; Used when setting timer speed and more
 DRIVER_STATE1 = $18
 DRIVER_STATE2 = $19
+DIRECT_TICK   = $1f  ; If set, note length is set directly from argument instead of array
 DSP_CHAN_STAT = $c0  ; $c0~$c7 are used to track channel busy status by driver
 DRV_TMP_LO    = $d0  ; Note pitch, Output volume, Pan, Track processing loop
 DRV_TMP_HI    = $d1  ;  and Vibrato store temp data there
@@ -573,7 +574,7 @@ ProcTrackStatus:
 0b17: 8d 00     mov   y,#TRACK_STATUS   ; $D0/F0 when playing, $90 when note cut
 0b19: f7 10     mov   a,(CHAN_PTR)+y
 0b1b: c4 12     mov   CUR_TRACK_STAT,a
-0b1d: f3 12 3a  bbc7  CUR_TRACK_STAT,TrackDisabled   ; $80
+0b1d: f3 12 3a  bbc7  CUR_TRACK_STAT,SetNextTrack   ; $80
 0b20: d3 12 20  bbc6  CUR_TRACK_STAT,ProcNoteTick    ; $40
 0b23: b3 12 07  bbc5  CUR_TRACK_STAT,ProcNoteCutTick ; $20
 
@@ -600,14 +601,14 @@ ProcNoteTick:
 0b47: d0 0e     bne   $0b57             ; Jump if nonzero
 0b49: 8d 00     mov   y,#TRACK_STATUS
 0b4b: f7 10     mov   a,(CHAN_PTR)+y    ; Load track status
-0b4d: c4 12     mov   CUR_TRACK_STAT,a             ; Store
-0b4f: f3 12 08  bbc7  CUR_TRACK_STAT,TrackDisabled    ; If bit 7 is not set, jump
+0b4d: c4 12     mov   CUR_TRACK_STAT,a  ; Store
+0b4f: f3 12 08  bbc7  CUR_TRACK_STAT,SetNextTrack    ; If bit 7 is not set, jump to next track
 0b52: 3f 61 0b  call  ProcessSeqData
 0b55: 2f ec     bra   ProcNoteTick
 0b57: 9c        dec   a
 0b58: d7 10     mov   (CHAN_PTR)+y,a
 
-TrackDisabled:
+SetNextTrack:
 0b5a: 3f b8 08  call  SetNextChanPtr
 0b5d: 6e 13 b7  dbnz  CUR_TRACK, ProcTrackStatus ; if CurTrack > 0
 0b60: 6f        ret
@@ -645,10 +646,10 @@ ProcessSeqData:
 
 SetNoteLength:
 0b94: a8 7f     sbc   a,#$7f            ; data -= $7f
-0b96: 78 01 1f  cmp   $1f,#1            ; Set by CmdBE
-0b99: f0 04     beq   $0b9f             ; if $1f is set, reuse event length?
+0b96: 78 01 1f  cmp   DIRECT_TICK,#1    ; Set by DirectNoteLen
+0b99: f0 04     beq   $0b9f             ; if $1f is set, our argument IS in ticks
 0b9b: 5d        mov   x,a               ;   `-.
-0b9c: f5 ac 10  mov   a,NoteLenTbl+x    ;     |
+0b9c: f5 ac 10  mov   a,NoteLenTbl+x    ;  oth|erwise load note len from lookup table
 0b9f: 8d 05     mov   y,#NOTE_LEN       ; <--´
 0ba1: d7 10     mov   (CHAN_PTR)+y,a
 0ba3: 5f b7 0b  jmp   UpdateSeqPtr
@@ -671,7 +672,7 @@ ResetNoteTicks:   ; So this will let the note keep playing longer
 0bb3: 8d 04     mov   y,#REMAIN_LEN     ; Remaining note length
 0bb5: d7 10     mov   (CHAN_PTR)+y,a    ; REMAIN_LEN = A
 
-; Funny, after each tick we update track pointer, even if it's just
+; Funny, after each tick we update track pointer, even if it's same
 UpdateSeqPtr:
 0bb7: 8d 00     mov   y,#0
 0bb9: e4 16     mov   a,CMD_PARAM_OFC
@@ -699,7 +700,7 @@ FuncJumptable:
 	  dw SetupEcho                      ; $bb
 	  dw SetTrackStatusBit4             ; $bc  ; Changing this to 0 disables echo write
 	  dw ResetNoteTicks                 ; $bd
-	  dw CmdBE                          ; $be
+	  dw DirectNoteLen                  ; $be
 	  dw TrackRest                      ; $bf
 	  dw SetSpeed                       ; $c0
 	  dw SetInstrument                  ; $c1
@@ -717,11 +718,10 @@ FuncJumptable:
 	  dw ResetNoteTicks                 ; $cd
 	  dw ResetNoteTicks                 ; $cf
 
-; So this command stores argument into $1f, possible for loop?
-CmdBE:
+DirectNoteLen:
 0c03: eb 16     mov   y,CMD_PARAM_OFC
 0c05: f7 14     mov   a,(CUR_SEQ_PTR)+y
-0c07: c4 1f     mov   $1f,a
+0c07: c4 1f     mov   DIRECT_TICK,a     ; Store flag in DP, with this we manually set note length
 0c09: 5f ad 0b  jmp   AddCmdLenResetNoteTicks
 
 CmdB3:
@@ -969,27 +969,27 @@ SetVol:
 0d87: f7 14     mov   a,(CUR_SEQ_PTR)+y
 0d89: 8d 12     mov   y,#VOLUME_LEV
 0d8b: d7 10     mov   (CHAN_PTR)+y,a
-0d8d: 8d 13     mov   y,#PAN_TMP          ;
-0d8f: f7 10     mov   a,(CHAN_PTR)+y      ; Load PAN_TMP to A
+0d8d: 8d 13     mov   y,#PAN_TMP        ;
+0d8f: f7 10     mov   a,(CHAN_PTR)+y    ; Load PAN_TMP to A
 
-0d91: c4 d0     mov   DRV_TMP_LO,a
-0d93: 48 ff     eor   a,#$ff
-0d95: c4 d1     mov   DRV_TMP_HI,a
-0d97: 8d 12     mov   y,#VOLUME_LEV
-0d99: f7 10     mov   a,(CHAN_PTR)+y
-0d9b: 2d        push  a
-0d9c: eb d0     mov   y,DRV_TMP_LO
-0d9e: cf        mul   ya
-0d9f: dd        mov   a,y
-0da0: 8d 10     mov   y,#VOLUME_OUT_L
-0da2: d7 10     mov   (CHAN_PTR)+y,a
-0da4: ae        pop   a
-0da5: eb d1     mov   y,DRV_TMP_HI
-0da7: cf        mul   ya
-0da8: dd        mov   a,y
-0da9: 8d 11     mov   y,#VOLUME_OUT_L
-0dab: d7 10     mov   (CHAN_PTR)+y,a
-0dad: d3 12 06  bbc6  CUR_TRACK_STAT,$0db6
+0d91: c4 d0     mov   DRV_TMP_LO,a      ; Store for multiplication
+0d93: 48 ff     eor   a,#$ff            ; XOR with 0xFF
+0d95: c4 d1     mov   DRV_TMP_HI,a      ; Save into tmp2
+0d97: 8d 12     mov   y,#VOLUME_LEV     ;
+0d99: f7 10     mov   a,(CHAN_PTR)+y    ; Load volume level into Y
+0d9b: 2d        push  a                 ; Save to stack to reuse on R chan
+0d9c: eb d0     mov   y,DRV_TMP_LO      ;
+0d9e: cf        mul   ya                ; multiply vol with pan value
+0d9f: dd        mov   a,y               ;
+0da0: 8d 10     mov   y,#VOLUME_OUT_L   ;
+0da2: d7 10     mov   (CHAN_PTR)+y,a    ; Store as left volume output
+0da4: ae        pop   a                 ; Pop our XORed pan
+0da5: eb d1     mov   y,DRV_TMP_HI      ;
+0da7: cf        mul   ya                ; Now compute right chan volume
+0da8: dd        mov   a,y               ;
+0da9: 8d 11     mov   y,#VOLUME_OUT_R   ;
+0dab: d7 10     mov   (CHAN_PTR)+y,a    ; Store
+0dad: d3 12 06  bbc6  CUR_TRACK_STAT,$0db6 ; Do nothing if track has finished playing note
 0db0: 3f a2 0e  call  SetChannelBusyMask
 0db3: 3f b0 0e  call  SetupVolume
 0db6: 5f ad 0b  jmp   AddCmdLenResetNoteTicks
@@ -1048,13 +1048,13 @@ ProcessNoteCmd:
 
 0e11: 8d 07     mov   y,#NOTE_CUT
 0e13: f7 10     mov   a,(CHAN_PTR)+y
-0e15: 78 01 1f  cmp   $1f,#$01          ; Set by CmdBE
-0e18: f0 04     beq   $0e1e
+0e15: 78 01 1f  cmp   DIRECT_TICK,#$01  ; Set by DirectNoteLen
+0e18: f0 04     beq   $0e1e             ; Jump if != 1
 0e1a: 5d        mov   x,a
 0e1b: f5 ac 10  mov   a,NoteLenTbl+x    ; Load note cut value from table into A
 
 0e1e: 8d 06     mov   y,#REMAIN_CUT
-0e20: d7 10     mov   (CHAN_PTR)+y,a
+0e20: d7 10     mov   (CHAN_PTR)+y,a    ; Reset note cut counter from NORMAL note length
 0e22: 3f c1 08  call  CheckSFX
 0e25: a3 12 1e  bbs5  CUR_TRACK_STAT,JmpResNoteTicks ; Jump if remaining note cut is nonzero
 0e28: c3 12 09  bbs6  CUR_TRACK_STAT,$0e34  ; Reset channel status if b6 is set, hm
