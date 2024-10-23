@@ -324,11 +324,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
           note_param_done = True
           continue
 
-        # So note cut can be in 0-0x30 range.
         # TODO: Value of 0 enables legato!
         if param < 0x31 and not note_length_set:
-          # Note cut parameter is set in ticks, always directly
-          note_length = param
+          note_length = note_lengths[param - 0x7f - 1]
+
           note_length_set = True
           note_param_done = True
           index += 1
@@ -344,16 +343,15 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       _octave = note // 12
       _base_n = note % 12
 
-      if note_length:
-        _len = note_length
-      elif refresh_changed:  # I don't remember why I did this…
-        _len = refresh_step + note_length + note_length
-        refresh_changed = False
-      else:
-        _len = refresh_step #+ note_length
+      # Normally, we want to shortest of both,
+      # as the driver is monophonic and will replace note it has been
+      # playing in case the note is longer than refresh step.
+      #
+      # This however introduces problem, as there is B7 command that
+      # will step into next state without stopping long note unlike BF
+      _len = min(note_length, refresh_step)
 
-      # Let me take a while guess here. Reused params will add ticks to
-      # current note without retriggering it
+
       if not reuse_cmd:
 
         if verbose:
