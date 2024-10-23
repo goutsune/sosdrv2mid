@@ -58,8 +58,8 @@ DRV_FLAGS     = $17  ; Used when setting timer speed and more
 DRIVER_STATE1 = $18
 DRIVER_STATE2 = $19
 DSP_CHAN_STAT = $c0  ; $c0~$c7 are used to track channel busy status by driver
-CUR_PITCH_LO  = $d0  ; This will store note pitch after note is decoded
-CUR_PITCH_HI  = $d1  ;
+DRV_TMP_LO    = $d0  ; Note pitch, Output volume, Pan, Track processing loop
+DRV_TMP_HI    = $d1  ;  and Vibrato store temp data there
 NXT_PITCH_LO  = $d2  ; This is pitch for the next semitone,
 NXT_PITCH_HI  = $d3  ; used when calculating vibrato?
 
@@ -95,14 +95,14 @@ WORK_0C      = $0c
 CUR_DETUNE   = $0d  ; Detune tmp?
 VIBRATO_SPD  = $0e  ; 0 stops processing alltogether
 WORK_0F      = $0f  ; ???
-VOLUME_L     = $10  ; $0-7f
-VOLUME_R     = $11  ; ↑
-WORK_12      = $12
-WORK_13      = $13
+VOLUME_OUT_L = $10  ; $0-7f
+VOLUME_OUT_R = $11  ; ↑
+VOLUME_LEV   = $12  ; Saved when setting volume, used for calculation only
+PAN_TMP      = $13  ; Saved when setting pan, used for calculation only
 FINE_TUNE    = $14  ; Detunes current instrument, in cents?
 VIBRATO_LEV  = $15  ;
-DRVPARAM_TMP = $16  ; ???
-DRVPARAM_TMP2= $17  ; ???
+DRVPARAM_TMP = $16  ; Used together with vibrato level
+DRVPARAM_TMP2= $17  ; Used together with vibrato level
 COARSE_TUNE2 = $18  ; Offsets sound by semitone
 FINE_TUNE2   = $19  ; Offsets sound by 1/256 semitone?
 PLAY_MODE    = $1a  ; Track playback mode. $25 normal,
@@ -321,18 +321,18 @@ SysFuncJumpTable:
 0959: 6f        ret
 
 095a: 3f 21 09  call  $0921
-095d: da d0     movw  CUR_PITCH_LO,ya
+095d: da d0     movw  DRV_TMP_LO,ya
 095f: 3f 21 09  call  $0921
 0962: da d2     movw  NXT_PITCH_LO,ya
 0964: 3f 21 09  call  $0921
 0967: cd 00     mov   x,#0
-0969: c7 d0     mov   (CUR_PITCH_LO+x),a
-096b: 3a d0     incw  CUR_PITCH_LO
+0969: c7 d0     mov   (DRV_TMP_LO+x),a
+096b: 3a d0     incw  DRV_TMP_LO
 096d: 1a d2     decw  NXT_PITCH_LO
 096f: f0 09     beq   $097a
 0971: dd        mov   a,y
-0972: c7 d0     mov   (CUR_PITCH_LO+x),a
-0974: 3a d0     incw  CUR_PITCH_LO
+0972: c7 d0     mov   (DRV_TMP_LO+x),a
+0974: 3a d0     incw  DRV_TMP_LO
 0976: 1a d2     decw  NXT_PITCH_LO
 0978: d0 ea     bne   $0964
 097a: 6f        ret
@@ -345,26 +345,26 @@ SysFuncJumpTable:
 0983: c4 05     mov   $05,a
 0985: 1c        asl   a
 0986: 8d 00     mov   y,#$00
-0988: da d0     movw  CUR_PITCH_LO,ya
-098a: 98 00 d1  adc   CUR_PITCH_HI,#$00
+0988: da d0     movw  DRV_TMP_LO,ya
+098a: 98 00 d1  adc   DRV_TMP_HI,#$00
 098d: ec de 10  mov   y,$10de
 0990: e5 dd 10  mov   a,$10dd
-0993: 7a d0     addw  ya,CUR_PITCH_LO
+0993: 7a d0     addw  ya,DRV_TMP_LO
 0995: da d2     movw  NXT_PITCH_LO,ya
 0997: 8d 00     mov   y,#0
 0999: f7 d2     mov   a,(NXT_PITCH_LO)+y
-099b: c4 d0     mov   CUR_PITCH_LO,a
+099b: c4 d0     mov   DRV_TMP_LO,a
 099d: fc        inc   y
 099e: f7 d2     mov   a,(NXT_PITCH_LO)+y
-09a0: c4 d1     mov   $d1,a
+09a0: c4 d1     mov   DRV_TMP_HI,a
 09a2: 8d 06     mov   y,#$06            ; $06XX are music tracks
 09a4: e8 00     mov   a,#$00            ;    ↑
 09a6: da 10     movw  CHAN_PTR,ya
 09a8: 8f 08 13  mov   CUR_TRACK,#$08    ; Process music tracks only
 09ab: 3f e8 09  call  $09e8
 09ae: 3f b8 08  call  SetNextChanPtr
-09b1: 3a d0     incw  CUR_PITCH_LO
-09b3: 3a d0     incw  CUR_PITCH_LO
+09b1: 3a d0     incw  DRV_TMP_LO
+09b3: 3a d0     incw  DRV_TMP_LO
 09b5: 6e 13 f3  dbnz  CUR_TRACK,$09ab    ; Did we finish with all tracks?
 09b8: 6f        ret
 
@@ -375,12 +375,12 @@ SysFuncJumpTable:
 09bf: 5d        mov   x,a
 09c0: 1c        asl   a
 09c1: 8d 00     mov   y,#0
-09c3: da d0     movw  CUR_PITCH_LO,ya
-09c5: 98 00 d1  adc   CUR_PITCH_HI,#0
+09c3: da d0     movw  DRV_TMP_LO,ya
+09c5: 98 00 d1  adc   DRV_TMP_HI,#0
 09c8: ec e0 10  mov   y,$10e0
 09cb: e5 df 10  mov   a,$10df
-09ce: 7a d0     addw  ya,CUR_PITCH_LO
-09d0: da d0     movw  CUR_PITCH_LO,ya
+09ce: 7a d0     addw  ya,DRV_TMP_LO
+09d0: da d0     movw  DRV_TMP_LO,ya
 09d2: 8d 04     mov   y,#$04
 09d4: e8 00     mov   a,#$00
 09d6: da 10     movw  CHAN_PTR,ya
@@ -406,11 +406,11 @@ SysFuncJumpTable:
 09fb: 7d        mov   a,x
 09fc: d7 10     mov   (CHAN_PTR)+y,a
 09fe: 8d 00     mov   y,#TRACK_STATUS
-0a00: f7 d0     mov   a,(CUR_PITCH_LO)+y
+0a00: f7 d0     mov   a,(DRV_TMP_LO)+y
 0a02: 8d 02     mov   y,#SEQ_PTR
 0a04: d7 10     mov   (CHAN_PTR)+y,a
 0a06: 8d 01     mov   y,#RAW_CMD
-0a08: f7 d0     mov   a,(CUR_PITCH_LO)+y
+0a08: f7 d0     mov   a,(DRV_TMP_LO)+y
 0a0a: 8d 03     mov   y,#SEQ_PTR_HI
 0a0c: d7 10     mov   (CHAN_PTR)+y,a
 0a0e: 6f        ret
@@ -427,8 +427,8 @@ SysFuncJumpTable:
 0a20: 8f 08 13  mov   CUR_TRACK,#$08
 0a23: 3f 68 0a  call  CmdB1
 0a26: 3f b8 08  call  SetNextChanPtr
-0a29: 3a d0     incw  CUR_PITCH_LO
-0a2b: 3a d0     incw  CUR_PITCH_LO
+0a29: 3a d0     incw  DRV_TMP_LO
+0a2b: 3a d0     incw  DRV_TMP_LO
 0a2d: 6e 13 f3  dbnz  CUR_TRACK,$0a23    ; Did we finish with all tracks?
 0a30: 6f        ret
 
@@ -455,8 +455,8 @@ SysFuncJumpTable:
 0a54: 8f 10 13  mov   CUR_TRACK,#$10
 0a57: 3f 76 0a  call  $0a76
 0a5a: 3f b8 08  call  SetNextChanPtr
-0a5d: 3a d0     incw  CUR_PITCH_LO
-0a5f: 3a d0     incw  CUR_PITCH_LO
+0a5d: 3a d0     incw  DRV_TMP_LO
+0a5f: 3a d0     incw  DRV_TMP_LO
 0a61: 6e 13 f3  dbnz  CUR_TRACK,$0a57
 0a64: 8f ff 24  mov   $24,#$ff
 0a67: 6f        ret
@@ -541,7 +541,7 @@ ResetTrackStatus:
 0ae3: eb 22     mov   y,$22
 0ae5: f0 06     beq   $0aed
 0ae7: 3f a2 0e  call  SetChannelBusyMask
-0aea: 3f b0 0e  call  SetVolume
+0aea: 3f b0 0e  call  SetupVolume
 0aed: 6f        ret
 
 0aee: 8f 00 25  mov   $25,#0
@@ -693,18 +693,18 @@ FuncJumptable:
 	  dw SetLoopStart                   ; $b5
 	  dw ProcessLoopEnd                 ; $b6
 	  dw ResetNoteTicks                 ; $b7
-	  dw SetTrackStatusLowNibble        ; $b8
+	  dw SetTrackStatusLowNibble        ; $b8  ; Resets instrument table if set to 1?
 	  dw SetFineTune                    ; $b9
 	  dw SetCoarseTune                  ; $ba
 	  dw SetupEcho                      ; $bb
-	  dw SetTrackStatusBit4             ; $bc
+	  dw SetTrackStatusBit4             ; $bc  ; Changing this to 0 disables echo write
 	  dw ResetNoteTicks                 ; $bd
 	  dw CmdBE                          ; $be
 	  dw TrackRest                      ; $bf
 	  dw SetSpeed                       ; $c0
 	  dw SetInstrument                  ; $c1
-	  dw CmdC2                          ; $c2
-	  dw CmdC3                          ; $c3
+	  dw SetVol                         ; $c2
+	  dw SetPan                         ; $c3
 	  dw SetVibratoSpeed                ; $c4
 	  dw SetVibratoLevel                ; $c5
 	  dw ResetNoteTicks                 ; $c6
@@ -956,41 +956,42 @@ TransferDSPInstr:
 0d77: 90 f5     bcc   $0d6e           ;
 0d79: 6f        ret
 
-CmdC3:
+SetPan:
 0d7a: eb 16     mov   y,CMD_PARAM_OFC
 0d7c: f7 14     mov   a,(CUR_SEQ_PTR)+y
 0d7e: 1c        asl   a
-0d7f: 8d 13     mov   y,#WORK_13
+0d7f: 8d 13     mov   y,#PAN_TMP
 0d81: d7 10     mov   (CHAN_PTR)+y,a
 0d83: 2f 0c     bra   $0d91
 
-CmdC2:
+SetVol:
 0d85: eb 16     mov   y,CMD_PARAM_OFC
 0d87: f7 14     mov   a,(CUR_SEQ_PTR)+y
-0d89: 8d 12     mov   y,#WORK_12
+0d89: 8d 12     mov   y,#VOLUME_LEV
 0d8b: d7 10     mov   (CHAN_PTR)+y,a
-0d8d: 8d 13     mov   y,#WORK_13
-0d8f: f7 10     mov   a,(CHAN_PTR)+y
-0d91: c4 d0     mov   CUR_PITCH_LO,a
+0d8d: 8d 13     mov   y,#PAN_TMP          ;
+0d8f: f7 10     mov   a,(CHAN_PTR)+y      ; Load W13 to A
+
+0d91: c4 d0     mov   DRV_TMP_LO,a
 0d93: 48 ff     eor   a,#$ff
-0d95: c4 d1     mov   CUR_PITCH_HI,a
-0d97: 8d 12     mov   y,#WORK_12
+0d95: c4 d1     mov   DRV_TMP_HI,a
+0d97: 8d 12     mov   y,#VOLUME_LEV
 0d99: f7 10     mov   a,(CHAN_PTR)+y
 0d9b: 2d        push  a
-0d9c: eb d0     mov   y,CUR_PITCH_LO
+0d9c: eb d0     mov   y,DRV_TMP_LO
 0d9e: cf        mul   ya
 0d9f: dd        mov   a,y
-0da0: 8d 10     mov   y,#VOLUME_L
+0da0: 8d 10     mov   y,#VOLUME_OUT_L
 0da2: d7 10     mov   (CHAN_PTR)+y,a
 0da4: ae        pop   a
-0da5: eb d1     mov   y,CUR_PITCH_HI
+0da5: eb d1     mov   y,DRV_TMP_HI
 0da7: cf        mul   ya
 0da8: dd        mov   a,y
-0da9: 8d 11     mov   y,#VOLUME_L
+0da9: 8d 11     mov   y,#VOLUME_OUT_L
 0dab: d7 10     mov   (CHAN_PTR)+y,a
 0dad: d3 12 06  bbc6  CUR_TRACK_STAT,$0db6
 0db0: 3f a2 0e  call  SetChannelBusyMask
-0db3: 3f b0 0e  call  SetVolume
+0db3: 3f b0 0e  call  SetupVolume
 0db6: 5f ad 0b  jmp   AddCmdLenResetNoteTicks
 
 SetVibratoSpeed:
@@ -1075,7 +1076,7 @@ JmpResNoteTicks:
 0e46: 5f af 0b  jmp   ResetNoteTicks
 
 0e49: 3f a2 0e  call  SetChannelBusyMask
-0e4c: 3f b0 0e  call  SetVolume
+0e4c: 3f b0 0e  call  SetupVolume
 0e4f: 13 12 07  bbc0  CUR_TRACK_STAT,$0e59
 0e52: 8d 08     mov   y,#NOTE_NUM
 0e54: f7 10     mov   a,(CHAN_PTR)+y
@@ -1123,11 +1124,11 @@ SetChannelBusyMask:                     ; Not sure
 0ead: c4 0a     mov   $0a,a
 0eaf: 6f        ret
 
-SetVolume:
-0eb0: 8d 10     mov   y,#VOLUME_L
+SetupVolume:
+0eb0: 8d 10     mov   y,#VOLUME_OUT_L
 0eb2: f7 10     mov   a,(CHAN_PTR)+y
 0eb4: c4 d6     mov   $d6,a             ; $D6 = Vol_L
-0eb6: 8d 11     mov   y,#VOLUME_R
+0eb6: 8d 11     mov   y,#VOLUME_OUT_R
 0eb8: f7 10     mov   a,(CHAN_PTR)+y
 0eba: c4 d7     mov   $d7,a             ; $D6 = Vol_R
 0ebc: 03 17 14  bbs0  DRV_FLAGS,$0ed3
@@ -1208,14 +1209,14 @@ WritePitchNoBase:
 0f3d: 9e        div   ya,x
 0f3e: 5d        mov   x,a               ; X = A/24 (Y is 0, so we don't care)
 0f3f: f6 93 10  mov   a,PitchTable+1+y  ; Y = A%24
-0f42: c4 d1     mov   CUR_PITCH_HI,a    ; $d1 = high pitch byte
+0f42: c4 d1     mov   DRV_TMP_HI,a      ; $d1 = high pitch byte
 0f44: f6 92 10  mov   a,PitchTable+y
 0f47: c4 d0     mov   CUR_PITCH,a       ; $d0 = low pitch byte
 0f49: f6 95 10  mov   a,PitchTable+3+y  ; Load and store next semitone low
 0f4c: 2d        push  a
 0f4d: f6 94 10  mov   a,PitchTable+2+y
 0f50: ee        pop   y
-0f51: 9a d0     subw  ya,CUR_PITCH_LO
+0f51: 9a d0     subw  ya,DRV_TMP_LO
 0f53: c4 d2     mov   NXT_PITCH_LO,a
 0f55: 8d 14     mov   y,#FINE_TUNE
 0f57: f7 10     mov   a,(CHAN_PTR)+y
@@ -1233,18 +1234,18 @@ WritePitchNoBase:
 0f6f: 6d        push  y
 0f70: ba d2     movw  ya,NXT_PITCH_LO
 0f72: cf        mul   ya
-0f73: 7a d0     addw  ya,CUR_PITCH_LO
-0f75: da d0     movw  CUR_PITCH_LO,ya
+0f73: 7a d0     addw  ya,DRV_TMP_LO
+0f75: da d0     movw  DRV_TMP_LO,ya
 0f77: ae        pop   a
 0f78: 8d 00     mov   y,#$00
-0f7a: 7a d0     addw  ya,CUR_PITCH_LO
-0f7c: da d0     movw  CUR_PITCH_LO,ya
-0f7e: 0b d0     asl   CUR_PITCH_LO
-0f80: 2b d1     rol   CUR_PITCH_HI
+0f7a: 7a d0     addw  ya,DRV_TMP_LO
+0f7c: da d0     movw  DRV_TMP_LO,ya
+0f7e: 0b d0     asl   DRV_TMP_LO
+0f80: 2b d1     rol   DRV_TMP_HI
 0f82: c8 08     cmp   x,#$08
 0f84: b0 07     bcs   $0f8d
-0f86: 4b d1     lsr   CUR_PITCH_HI
-0f88: 6b d0     ror   CUR_PITCH_LO
+0f86: 4b d1     lsr   DRV_TMP_HI
+0f88: 6b d0     ror   DRV_TMP_LO
 0f8a: 3d        inc   x
 0f8b: 2f f5     bra   $0f82
 0f8d: 3f c1 08  call  CheckSFX
@@ -1255,20 +1256,20 @@ WritePitchNoBase:
 0f97: f7 10     mov   a,(CHAN_PTR)+y
 0f99: c4 d2     mov   NXT_PITCH_LO,a
 0f9b: e4 d2     mov   a,NXT_PITCH_LO
-0f9d: eb d1     mov   y,CUR_PITCH_HI
+0f9d: eb d1     mov   y,DRV_TMP_HI
 0f9f: cf        mul   ya
 0fa0: da d4     movw  $d4,ya
 0fa2: e4 d2     mov   a,NXT_PITCH_LO
-0fa4: eb d0     mov   y,CUR_PITCH_LO
+0fa4: eb d0     mov   y,DRV_TMP_LO
 0fa6: cf        mul   ya
 0fa7: 6d        push  y
 0fa8: e4 d3     mov   a,NXT_PITCH_HI
-0faa: eb d0     mov   y,CUR_PITCH_LO
+0faa: eb d0     mov   y,DRV_TMP_LO
 0fac: cf        mul   ya
 0fad: 7a d4     addw  ya,$d4
 0faf: da d4     movw  $d4,ya
 0fb1: e4 d3     mov   a,NXT_PITCH_HI
-0fb3: eb d1     mov   y,CUR_PITCH_HI
+0fb3: eb d1     mov   y,DRV_TMP_HI
 0fb5: cf        mul   ya
 0fb6: fd        mov   y,a
 0fb7: ae        pop   a
@@ -1313,15 +1314,15 @@ WritePitchNoBase:
 0ff9: a4 d8     sbc   a,$d8
 0ffb: 8d 40     mov   y,#$40
 0ffd: cf        mul   ya
-0ffe: da d0     movw  $d0,ya
+0ffe: da d0     movw  DRV_TMP_LO,ya
 1000: 8d 06     mov   y,#$06
 1002: e8 00     mov   a,#$00
-1004: 7a d0     addw  ya,$d0
-1006: da d0     movw  $d0,ya
+1004: 7a d0     addw  ya,DRV_TMP_LO
+1006: da d0     movw  DRV_TMP_LO,ya
 1008: 8d 00     mov   y,#$00
-100a: f7 d0     mov   a,($d0)+y
+100a: f7 d0     mov   a,(DRV_TMP_LO)+y
 100c: 28 9f     and   a,#$9f
-100e: d7 d0     mov   ($d0)+y,a
+100e: d7 d0     mov   (DRV_TMP_LO)+y,a
 1010: 7d        mov   a,x
 1011: 6f        ret
 
@@ -1336,14 +1337,14 @@ UpdateVibrato:
 1020: 1c        asl   a
 1021: 90 02     bcc   $1025
 1023: 48 ff     eor   a,#$ff
-1025: c4 d0     mov   CUR_PITCH_LO,a
+1025: c4 d0     mov   DRV_TMP_LO,a
 1027: 8d 15     mov   y,#VIBRATO_LEV
 1029: f7 10     mov   a,(CHAN_PTR)+y
 102b: f0 1f     beq   $104c
-102d: c4 d1     mov   CUR_PITCH_HI,a
+102d: c4 d1     mov   DRV_TMP_HI,a
 102f: 5c        lsr   a
 1030: c4 d2     mov   NXT_PITCH_LO,a
-1032: ba d0     movw  ya,CUR_PITCH_LO
+1032: ba d0     movw  ya,DRV_TMP_LO
 1034: cf        mul   ya
 1035: dd        mov   a,y
 1036: 8d 00     mov   y,#$00
