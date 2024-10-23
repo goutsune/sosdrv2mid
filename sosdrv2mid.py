@@ -42,6 +42,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     if cmd > 0xbf and not reuse_cmd:
       last_cmd = cmd
 
+    # ##################### Note length range
 
     # 80~AF Note length
     if cmd > 0x7f and cmd <= 0xb0:
@@ -53,6 +54,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         print('{:5d}: Set note len to {}'.format(cur_tick, note_len))
 
       index += 1
+
+    # ###################### BX commands
 
     # B5 Set loop start
     elif cmd == 0xb5:
@@ -136,6 +139,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
       cur_tick += note_len
       index += 1
+
+    # ####################### CX commands
 
     # C0 Set Tempo:
     elif cmd == 0xc0:
@@ -235,6 +240,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index += 2
 
     # D0~FF - Notes
+
+    # ################## D0~FF - Notes
+
     elif cmd > 0xcf:
       # NN P1? P2?,
       # velocity is set if Param is between $32-$7f
@@ -304,6 +312,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         reuse_cmd = False
         cur_tick += note_len
 
+    # ################## Shorthand commands
+
     elif cmd < 0x80:
       # This will pass down current byte to CMD we stored before,
       # can be CX, or note command
@@ -318,6 +328,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         cur_tick,
         cmd))
       index += 1
+
+    # #################### Extra whatever to do after loop
 
 
 def main():
