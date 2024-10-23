@@ -38,6 +38,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     else:
       cmd = last_note_cmd
 
+    # Store last command in buffer to reuse for shorthands
+    if cmd > 0xbf and not reuse_cmd:
+      last_note_cmd = cmd
+
     # 80~AF Note length
     if cmd > 0x7f and cmd <= 0xb0:
       # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
@@ -234,7 +238,6 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # NN P1? P2?,
       # velocity is set if Param is between $32-$7f
       # note cut is set if arg is between $00-$31
-      last_note_cmd = cmd
       note = cmd - 0xd0 + note_offset + 36  # Transpose by 3 octaves, seems to be correct
       # Read optional parameters for this note
       note_param_done = False
