@@ -665,7 +665,7 @@ StoreDrvSetting:                        ; A = Value, Y = Channel work area Ptr
 AddCmdLenResetNoteTicks:
 0bad: ab 16     inc   CMD_PARAM_OFC
 
-ResetNoteTicks:
+ResetNoteTicks:   ; So this will let the note keep playing longer
 0baf: 8d 05     mov   y,#NOTE_LEN       ; Note Len
 0bb1: f7 10     mov   a,(CHAN_PTR)+y    ; A = Note length
 0bb3: 8d 04     mov   y,#REMAIN_LEN     ; Remaining note length
