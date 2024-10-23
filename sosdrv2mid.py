@@ -347,7 +347,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
           index += 1
 
         elif param >= 0x31 and not velocity_set:
-          velocity = int((param - 0x31) / 0x4d * 0x7f)
+          #velocity = int((param - 0x31) / 0x4d * 0x7f)
+          velocity = param
           velocity_set = True
           index += 1
 
