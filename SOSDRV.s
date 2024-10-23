@@ -110,13 +110,13 @@ PLAY_MODE    = $1a  ; Track playback mode. $25 normal,
                     ;                      $00 stops playback at track end
 WORK_1B      = $1b  ; Seems to be unused in code
 
-; ========= These 5 are transferred in bulk?
+; ========= These 6 are transferred in bulk?
 SPC_SCRN     = $1c  ; DSP *4 register, loads instrument data from memory tbl
 SPC_ADSR1    = $1d  ; DSP ADSR Register 1: E DDD AAAA  //E: Enable
 SPC_ADSR2    = $1e  ; DSP ADSR register 2: SSS  RRRRR
 SPC_GAIN     = $1f  ; DSP Gain, 0VVV VVVV or 1 MM VVVVV  //M: Mode; V: Value
 FREQ_MULT    = $20  ; Seems to be multiplier for frequency values
-SPC_OUTX     = $21  ; Are we even supposed to write these to DSP?
+FREQ_MULT_HI = $21  ;
 
 SEQ_START    = $22  ; Sequence start offset
 WORK_24      = $24  ; Affects PLAY_MODE
@@ -970,7 +970,7 @@ SetVol:
 0d89: 8d 12     mov   y,#VOLUME_LEV
 0d8b: d7 10     mov   (CHAN_PTR)+y,a
 0d8d: 8d 13     mov   y,#PAN_TMP          ;
-0d8f: f7 10     mov   a,(CHAN_PTR)+y      ; Load W13 to A
+0d8f: f7 10     mov   a,(CHAN_PTR)+y      ; Load PAN_TMP to A
 
 0d91: c4 d0     mov   DRV_TMP_LO,a
 0d93: 48 ff     eor   a,#$ff
