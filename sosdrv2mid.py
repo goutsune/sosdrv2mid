@@ -174,7 +174,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
       if volume > 0x32:  # Assume direct volume level if we are higher than that
         _vol = volume
-        print('{:5d}: Track volume is above 50/255, not normalizing!')
+        print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
       else:
         _vol = volume*8
 
@@ -297,7 +297,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
         midi.addNote(track, track, note, cur_tick, _len, velocity)
         cur_tick += note_len
+
       else:
+
         reuse_cmd = False
         cur_tick += note_len
 
