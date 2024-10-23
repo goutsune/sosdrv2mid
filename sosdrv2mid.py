@@ -90,7 +90,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       echo_feedback = track_data[index]
 
       # TODO: Pass this as reverb level to channel, maybe?
-      print('{:5d}: Set echo vol:{} del:{} fdb:{}'.format(
+      print('{:5d}: Set echo vol:{:02X} del:{:02X} fdb:{:02X}'.format(
         cur_tick,
         echo_vol,
         echo_delay,
