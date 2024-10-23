@@ -60,6 +60,14 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     # ###################### BX commands
 
+    # B1 Disable track
+    elif cmd == 0xb1:
+      # That's it, we are done for this track, don't loop it.
+      print('Reached end of track {} at {:04X}!'.format(track+1, ptr+index))
+      print('================================\n')
+      done = True
+      continue
+
     # B5 Set loop start
     elif cmd == 0xb5:
       index +=1
@@ -67,11 +75,14 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         cur_tick,
         ptr+index))
 
-    # B6 End / loop end
+    # B6 Loop end
     elif cmd == 0xb6:
-      print('Reached end of track {} at {:04X}!'.format(track+1, ptr+index))
-      print('================================\n')
-      done = True
+      print('{:5d}: Reached end of track {} loop at {:04X}!'.format(
+        cur_tick,
+        track+1,
+        ptr+index))
+
+      index += 2
 
     # BA Set Note offset
     elif cmd == 0xba:
