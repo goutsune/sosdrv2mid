@@ -8,6 +8,9 @@ NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 
+# TODO: I really need to process all tracks at the same time, it seems…
+direct_tick_len = False  # If set, use direct value instead of lookup table
+
 def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
   done = False
@@ -15,7 +18,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   cur_tick = 0
   cmd = None
   reuse_cmd = False
-  note_length_changed = False
+  note_length_changed = False  # I think this is not needed
+  tick_advance = 0 # This is to keep track where to put CX command result.
+                   # It seems to matter for C2 the most, not sure other
+                   # commands care about it
 
   note = 0
   note_offset = 0
@@ -29,8 +35,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   echo_delay = 0
   echo_feedback = 0
 
-  verbose = False  # Log notes, rests and length changes
-
+  verbose = True  # Log notes, rests and length changes
 
   while not done:
     if not reuse_cmd:
@@ -47,7 +52,12 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     # 80~AF Note length
     if cmd > 0x7f and cmd <= 0xb0:
       # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
-      note_len = note_lengths[cmd - 0x7f - 1]
+      if direct_tick_len:
+        note_len = cmd - 0x7f - 1
+      else:
+        note_len = note_lengths[cmd - 0x7f - 1]
+
+      # Store this, just in case....
       note_length_changed = True
 
       if verbose:
@@ -73,6 +83,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     # BA Set Note offset
     elif cmd == 0xba:
       index += 1
+      # This is mostly used to set octave, because note range is just 48 notes
       note_offset = track_data[index] - 0x40  # no carry bug this time
       print('{:5d}: Set note offset to {}'.format(
         cur_tick,
@@ -129,8 +140,29 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
       index +=1
 
+    # B7 Exdend note
+    elif cmd == 0xb7:
+      tick_advance = 0
+      if verbose:
+        print('{:5d}: Extend len: {}'.format(
+          cur_tick,
+          note_len
+        ))
+
+      cur_tick += note_len
+      index += 1
+
+    # BE Set direct tick mode
+    elif cmd == 0xbe:
+      index += 1
+      # If enabled, all note length are directly specified length in ticks
+      # By default driver uses lookup table
+      direct_tick_len = bool(track_data[index] == 1)
+
+
     # BF Rest
     elif cmd == 0xbf:
+      tick_advance = 0
       if verbose:
         print('{:5d}: Rest len: {}'.format(
           cur_tick,
@@ -145,7 +177,11 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     # C0 Set Tempo:
     elif cmd == 0xc0:
       # C0 XX
-      index += 1
+      if not reuse_cmd:
+        index += 1
+      else:
+        reuse_cmd = False
+
       _arg = track_data[index]  # TODO: How is this properly calculated?
       _timer_div = 5000 / _arg  # $1388/X in driver
 
@@ -155,49 +191,67 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         speed,
         speed *1.2
       ))
-      midi.addTempo(track, cur_tick, speed * 1.2)  # Beware, magic number
+      midi.addTempo(track, cur_tick+tick_advance, speed * 1.2)  # Beware, magic number
       index += 1
 
     # C1 Set instrument
     elif cmd == 0xc1:
       # C1 XX
-      index += 1
+      if not reuse_cmd:
+        index += 1
+      else:
+        reuse_cmd = False
+
       instrument = track_data[index]
       print('{:5d}: Set instrument to {}'.format(
         cur_tick,
         instrument
       ))
-      midi.addProgramChange(track, track, cur_tick, instrument)
+      midi.addProgramChange(track, track, cur_tick+tick_advance, instrument)
       index += 1
 
     # C2 Set volume
     elif cmd == 0xc2:
-      index += 1
+      if not reuse_cmd:
+        index += 1
+      else:
+        reuse_cmd = False
+
       volume = track_data[index]
       # 00-FF range, but the value is directly cotrolling gain register
       # on the dsp. The tracks generally expect to be 1/8 volume at most to allow
       # for mixing with no clipping, let's assume that too.
 
-      if volume > 0x32:  # Assume direct volume level if we are higher than that
-        _vol = volume
-        print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
-      else:
-        _vol = volume*8
+      # Volume cmd takes 1 tick to execute, meaning it can be set while a note is
+      # playing.
+
+      # if volume > 0x32:  # Assume direct volume level if we are higher than that
+        # _vol = volume
+        # print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
+      # else:
+        # _vol = volume*8
 
       # Normalize to 7 bit integer
-      _vol = _vol // 2
-      print('{:5d}: Set volume to {}'.format(
-        cur_tick,
-        _vol
-      ))
+      # _vol = _vol // 2
+      # print('{:5d}: Set volume to {}'.format(
+        # cur_tick,
+        # _vol
+      # ))
 
-      midi.addControllerEvent(track, track, cur_tick, 7, _vol)
+      #midi.addControllerEvent(track, track, cur_tick+tick_advance, 7, _vol)
+
+      # It seems what we want here is to modify instrument's velocity
+
       index += 1
 
 
     # C5 Set Vibrato
     elif cmd == 0xc5:
-      index += 1
+      if not reuse_cmd:
+        index += 1
+      else:
+        reuse_cmd = False
+
       vibrato = track_data[index]
       # 00-FF Range, let's just set midi modulation controller to it
 
@@ -206,13 +260,17 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         vibrato // 2
       ))
 
-      midi.addControllerEvent(track, track, cur_tick, 1, vibrato // 2)
+      midi.addControllerEvent(track, track, cur_tick+tick_advance, 1, vibrato // 2)
       index += 1
 
 
     # C3 Set panning
     elif cmd == 0xc3:
-      index += 1
+      if not reuse_cmd:
+        index += 1
+      else:
+        reuse_cmd = False
+
       pan = track_data[index]
       # From 00 to 7F, then wraps. 0 is right only, 7f is left only.
       # 40 is a bit to the left, 3f is a bit to the right, there is no
@@ -228,18 +286,21 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         pan
       ))
 
-      midi.addControllerEvent(track, track, cur_tick, 10, pan)
+      midi.addControllerEvent(track, track, cur_tick+tick_advance, 10, pan)
       index += 1
 
     # C2 Stub, 2 bytes
-    elif cmd < 0xd0 and cmd > 0x7f:
+    elif cmd > 0xbf and cmd < 0xd0:
       print('{:5d}: Function {:02X} unimplemented. arg: {:02x}'.format(
         cur_tick,
         cmd,
         track_data[index+1]))
-      index += 2
 
-    # D0~FF - Notes
+      if not reuse_cmd:
+        index += 2
+      else:
+        index += 1
+        reuse_cmd = False
 
     # ################## D0~FF - Notes
 
@@ -252,6 +313,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       note_param_done = False
       note_cut_set = False
       velocity_set = False
+      tick_advance = 0
 
       if not reuse_cmd:
         index += 1
@@ -262,13 +324,16 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
           note_param_done = True
           continue
 
-        if param <= 0x31 and not note_cut_set:
-          note_cut = note_lengths[param]
+        # So note cut can be in 0-0x30 range.
+        # TODO: Value of 0 enables legato!
+        if param < 0x31 and not note_cut_set:
+          # Note cut parameter is set in ticks, always directly
+          note_cut = param
           note_cut_set = True
           note_param_done = True
           index += 1
 
-        elif param > 0x31 and not velocity_set:
+        elif param >= 0x31 and not velocity_set:
           velocity = int((param - 0x31) / 0x4d * 0x7f)
           velocity_set = True
           index += 1
@@ -281,11 +346,11 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
       if note_cut:
         _len = note_cut
-      elif note_length_changed:
+      elif note_length_changed:  # I don't remember why I did this…
         _len = note_len + note_cut + note_cut
         note_length_changed = False
       else:
-        _len = note_len + note_cut
+        _len = note_len #+ note_cut
 
       # Let me take a while guess here. Reused params will add ticks to
       # current note without retriggering it
@@ -330,6 +395,15 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index += 1
 
     # #################### Extra whatever to do after loop
+
+    # Either check if our normal CMD is within CX/Note range,
+    # or if we are repeating, check if last cmd was CX/Note
+    # if cmd > 0xbf and cmd < 0xd0:
+    if cmd == 0xc2:  # Advance only for volume for now
+
+      # Advance internal tick for CX commands to execute them
+      # on the playing note
+      tick_advance += 1
 
 
 def main():
