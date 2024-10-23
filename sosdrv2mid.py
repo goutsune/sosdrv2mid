@@ -29,7 +29,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   echo_delay = 0
   echo_feedback = 0
 
-  verbose = True  # Log notes, rests and length changes
+  verbose = False  # Log notes, rests and length changes
 
 
   while not done:
@@ -158,6 +158,67 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         instrument
       ))
       midi.addProgramChange(track, track, cur_tick, instrument)
+      index += 1
+
+    # C2 Set volume
+    elif cmd == 0xc2:
+      index += 1
+      volume = track_data[index]
+      # 00-FF range, but the value is directly cotrolling gain register
+      # on the dsp. The tracks generally expect to be 1/8 volume at most to allow
+      # for mixing with no clipping, let's assume that too.
+
+      if volume > 0x32:  # Assume direct volume level if we are higher than that
+        _vol = volume
+        print('{:5d}: Track volume is above 50/255, not normalizing!')
+      else:
+        _vol = volume*8
+
+      # Normalize to 7 bit integer
+      _vol = _vol // 2
+      print('{:5d}: Set volume to {}'.format(
+        cur_tick,
+        _vol
+      ))
+
+      midi.addControllerEvent(track, track, cur_tick, 7, _vol)
+      index += 1
+
+
+    # C5 Set Vibrato
+    elif cmd == 0xc5:
+      index += 1
+      vibrato = track_data[index]
+      # 00-FF Range, let's just set midi modulation controller to it
+
+      print('{:5d}: Set modulation to {}'.format(
+        cur_tick,
+        vibrato // 2
+      ))
+
+      midi.addControllerEvent(track, track, cur_tick, 1, vibrato // 2)
+      index += 1
+
+
+    # C3 Set panning
+    elif cmd == 0xc3:
+      index += 1
+      pan = track_data[index]
+      # From 00 to 7F, then wraps. 0 is right only, 7f is left only.
+      # 40 is a bit to the left, 3f is a bit to the right, there is no
+      # center.
+
+      # Limit to 7 bits, just like midi
+      pan = pan & 0b01111111
+
+      # Reverse value, in midi 0 is left
+      pan = 0x7f - pan
+      print('{:5d}: Set pan to {}'.format(
+        cur_tick,
+        pan
+      ))
+
+      midi.addControllerEvent(track, track, cur_tick, 10, pan)
       index += 1
 
     # C2 Stub, 2 bytes
