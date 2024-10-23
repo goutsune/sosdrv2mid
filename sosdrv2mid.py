@@ -8,9 +8,6 @@ NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 
-# TODO: I really need to process all tracks at the same time, it seems…
-direct_tick_len = False  # If set, use direct value instead of lookup table
-
 def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
   done = False
@@ -18,10 +15,6 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   cur_tick = 0
   cmd = None
   reuse_cmd = False
-  refresh_changed = False  # I think this is not needed
-  tick_advance = 0 # This is to keep track where to put CX command result.
-                   # It seems to matter for C2 the most, not sure other
-                   # commands care about it
 
   note = 0
   note_offset = 0
@@ -34,6 +27,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
   echo_vol = 0
   echo_delay = 0
   echo_feedback = 0
+
+  # TODO: I really need to process all tracks at the same time, it seems…
+  direct_tick_len = False  # If set, use direct value instead of lookup table
 
   verbose = True  # Log notes, rests and length changes
 
@@ -56,9 +52,6 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         refresh_step = cmd - 0x7f - 1
       else:
         refresh_step = note_lengths[cmd - 0x7f - 1]
-
-      # Store this, just in case....
-      refresh_changed = True
 
       if verbose:
         print('{:5d}: Set period to {} ticks'.format(cur_tick, refresh_step))
@@ -140,9 +133,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
       index +=1
 
-    # B7 Exdend note
+    # B7 Advance state by current refresh rate
     elif cmd == 0xb7:
-      tick_advance = 0
       if verbose:
         print('{:5d}: Extend len: {}'.format(
           cur_tick,
@@ -162,7 +154,6 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     # BF Rest
     elif cmd == 0xbf:
-      tick_advance = 0
       if verbose:
         print('{:5d}: Rest len: {}'.format(
           cur_tick,
@@ -173,6 +164,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index += 1
 
     # ####################### CX commands
+    # These commands advance engine time!
 
     # C0 Set Tempo:
     elif cmd == 0xc0:
@@ -191,8 +183,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         speed,
         speed *1.2
       ))
-      midi.addTempo(track, cur_tick+tick_advance, speed * 1.2)  # Beware, magic number
+      midi.addTempo(track, cur_tick, speed * 1.2)  # Beware, magic number
       index += 1
+      cur_tick += refresh_step
 
     # C1 Set instrument
     elif cmd == 0xc1:
@@ -207,8 +200,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         cur_tick,
         instrument
       ))
-      midi.addProgramChange(track, track, cur_tick+tick_advance, instrument)
+      midi.addProgramChange(track, track, cur_tick, instrument)
       index += 1
+      cur_tick += refresh_step
 
     # C2 Set volume
     elif cmd == 0xc2:
@@ -225,24 +219,26 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # Volume cmd takes 1 tick to execute, meaning it can be set while a note is
       # playing.
 
-      # if volume > 0x32:  # Assume direct volume level if we are higher than that
-        # _vol = volume
-        # print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
-      # else:
-        # _vol = volume*8
+      if volume > 0x32:  # Assume direct volume level if we are higher than that
+        _vol = volume
+        print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
+      else:
+        _vol = volume*8
 
       # Normalize to 7 bit integer
-      # _vol = _vol // 2
-      # print('{:5d}: Set volume to {}'.format(
-        # cur_tick,
-        # _vol
-      # ))
+      _vol = _vol // 2
 
-      #midi.addControllerEvent(track, track, cur_tick+tick_advance, 7, _vol)
+      print('{:5d}: Set volume to {}'.format(
+        cur_tick,
+        _vol
+      ))
 
-      # It seems what we want here is to modify instrument's velocity
+
+      # It seems what we want here is to modify instrument's velocity, not set volume
+      midi.addControllerEvent(track, track, cur_tick, 7, _vol)
 
       index += 1
+      cur_tick += refresh_step
 
 
     # C5 Set Vibrato
@@ -260,8 +256,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         vibrato // 2
       ))
 
-      midi.addControllerEvent(track, track, cur_tick+tick_advance, 1, vibrato // 2)
+      midi.addControllerEvent(track, track, cur_tick, 1, vibrato // 2)
       index += 1
+      cur_tick += refresh_step
 
 
     # C3 Set panning
@@ -286,10 +283,11 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         pan
       ))
 
-      midi.addControllerEvent(track, track, cur_tick+tick_advance, 10, pan)
+      midi.addControllerEvent(track, track, cur_tick, 10, pan)
       index += 1
+      cur_tick += refresh_step
 
-    # C2 Stub, 2 bytes
+    # CX Stub, 2 bytes
     elif cmd > 0xbf and cmd < 0xd0:
       print('{:5d}: Function {:02X} unimplemented. arg: {:02x}'.format(
         cur_tick,
@@ -302,6 +300,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         index += 1
         reuse_cmd = False
 
+      cur_tick += refresh_step
+
     # ################## D0~FF - Notes
 
     elif cmd > 0xcf:
@@ -313,7 +313,6 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       note_param_done = False
       note_length_set = False
       velocity_set = False
-      tick_advance = 0
 
       if not reuse_cmd:
         index += 1
@@ -326,7 +325,11 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
         # TODO: Value of 0 enables legato!
         if param < 0x31 and not note_length_set:
-          note_length = note_lengths[param - 0x7f - 1]
+
+          if note_lengths[param] == 0:
+            print('{:5d}: Playing with legato not supported, using last length'.format(cur_tick))
+          else:
+            note_length = note_lengths[param]
 
           note_length_set = True
           note_param_done = True
@@ -349,13 +352,13 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       #
       # This however introduces problem, as there is B7 command that
       # will step into next state without stopping long note unlike BF
-      _len = min(note_length, refresh_step)
+      _len = note_length
 
 
       if not reuse_cmd:
 
         if verbose:
-          print('{:5d}: Playing {}{} len: {} cut: {} vol: {}'.format(
+          print('{:5d}: Playing {}{} gate: {} len: {} vol: {}'.format(
             cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
 
         midi.addNote(track, track, note, cur_tick, _len, velocity)
@@ -364,7 +367,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       elif reuse_cmd and velocity_set:
         reuse_cmd = False
         if verbose:
-          print('{:5d}: Re-playing {}{} len: {} cut: {} vol: {}'.format(
+          print('{:5d}: Re-playing {}{} gate: {} len: {} vol: {}'.format(
             cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
 
         midi.addNote(track, track, note, cur_tick, _len, velocity)
@@ -394,15 +397,6 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     # #################### Extra whatever to do after loop
 
-    # Either check if our normal CMD is within CX/Note range,
-    # or if we are repeating, check if last cmd was CX/Note
-    # if cmd > 0xbf and cmd < 0xd0:
-    if cmd == 0xc2:  # Advance only for volume for now
-
-      # Advance internal tick for CX commands to execute them
-      # on the playing note
-      tick_advance += 1
-
 
 def main():
   if len(sys.argv) < 2:
@@ -415,7 +409,8 @@ def main():
   output = MIDIFile(
     numTracks=8,
     ticks_per_quarternote=48,      # Try to count by SNES Timer 0
-    eventtime_is_ticks=True
+    eventtime_is_ticks=True,
+    deinterleave=False
   )
 
   # Extract tick length table at $10ac, $31 entries
