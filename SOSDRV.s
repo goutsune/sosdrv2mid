@@ -702,7 +702,7 @@ FuncJumptable:
 	  dw CmdBE                          ; $be
 	  dw TrackRest                      ; $bf
 	  dw SetSpeed                       ; $c0
-	  dw CmdC1                          ; $c1
+	  dw SetInstrument                  ; $c1
 	  dw CmdC2                          ; $c2
 	  dw CmdC3                          ; $c3
 	  dw SetVibratoSpeed                ; $c4
@@ -929,7 +929,7 @@ SetStartTimer1:
 0d4f: c5 f1 00  mov   DSP_CTRL,a
 0d52: 6f        ret
 
-CmdC1
+SetInstrument:
 0d53: eb 16     mov   y,CMD_PARAM_OFC
 0d55: f7 14     mov   a,(CUR_SEQ_PTR)+y
 0d57: 3f 5d 0d  call  TransferDSPInstr
