@@ -397,7 +397,7 @@ SysFuncJumpTable:
 09e7: 6f        ret
 
 09e8: 4d        push  x
-09e9: 3f 68 0a  call  CmdB1
+09e9: 3f 68 0a  call  DisableTrack
 09ec: ce        pop   x
 09ed: 8d 00     mov   y,TRACK_STATUS
 09ef: f6 6f 10  mov   a,Data106f+y      ; $80 at that address
@@ -428,7 +428,7 @@ SysFuncJumpTable:
 0a1c: e8 00     mov   a,#$00
 0a1e: da 10     movw  CHAN_PTR,ya
 0a20: 8f 08 13  mov   CUR_TRACK,#$08
-0a23: 3f 68 0a  call  CmdB1
+0a23: 3f 68 0a  call  DisableTrack
 0a26: 3f b8 08  call  SetNextChanPtr
 0a29: 3a d0     incw  DRV_TMP_LO
 0a2b: 3a d0     incw  DRV_TMP_LO
@@ -444,8 +444,8 @@ SysFuncJumpTable:
 0a3c: 7d        mov   a,x               ; <-.
 0a3d: 8d 0c     mov   y,#$0c            ;   |
 0a3f: 77 10     cmp   a,(CHAN_PTR)+y    ;  /
-0a41: f0 25     beq   CmdB1             ; |
-0a43: 3f b8 08  call  SetNextChanPtr ; `,
+0a41: f0 25     beq   DisableTrack      ; |
+0a43: 3f b8 08  call  SetNextChanPtr    ; `,
 0a46: 6e 13 f3  dbnz  CUR_TRACK,$0a3c   ; ´
 0a49: 6f        ret
 
@@ -464,14 +464,14 @@ SysFuncJumpTable:
 0a64: 8f ff 24  mov   $24,#$ff
 0a67: 6f        ret
 
-CmdB1:
+DisableTrack:
 0a68: 8d 00     mov   y,#TRACK_STATUS
 0a6a: f7 10     mov   a,(CHAN_PTR)+y
-0a6c: 5d        mov   x,a
-0a6d: e8 00     mov   a,#TRACK_STATUS
-0a6f: d7 10     mov   (CHAN_PTR)+y,a
-0a71: c8 c0     cmp   x,#$c0
-0a73: b0 0f     bcs   KOFChannel        ; X ≥ $c0
+0a6c: 5d        mov   x,a               ; Load track status and store in X
+0a6d: e8 00     mov   a,#0
+0a6f: d7 10     mov   (CHAN_PTR)+y,a    ; Store 0 to channel pointer
+0a71: c8 c0     cmp   x,#$c0            ; Compare X with $c0
+0a73: b0 0f     bcs   KOFChannel        ; Switch off channel and free it
 0a75: 6f        ret
 
 0a76: 8d 00     mov   y,#TRACK_STATUS
@@ -576,7 +576,7 @@ ProcTrackStatus:
 0b17: 8d 00     mov   y,#TRACK_STATUS   ; $D0/F0 when playing, $90 when note cut
 0b19: f7 10     mov   a,(CHAN_PTR)+y
 0b1b: c4 12     mov   CUR_TRACK_STAT,a
-0b1d: f3 12 3a  bbc7  CUR_TRACK_STAT,SetNextTrack   ; $80
+0b1d: f3 12 3a  bbc7  CUR_TRACK_STAT,SetNextTrack    ; $80
 0b20: d3 12 20  bbc6  CUR_TRACK_STAT,ProcNoteTick    ; $40
 0b23: b3 12 07  bbc5  CUR_TRACK_STAT,ProcNoteCutTick ; $20
 
@@ -690,7 +690,7 @@ UpdateSeqPtr:
 
 .ORG $0bc7
 FuncJumptable:
-	  dw CmdB1                          ; $b1
+	  dw DisableTrack                   ; $b1
 	  dw CmdB2                          ; $b2
 	  dw CmdB3                          ; $b3
 	  dw CmdB4                          ; $b4
