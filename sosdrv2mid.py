@@ -7,6 +7,24 @@ from midiutil import MIDIFile
 NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
+INSTR_MAP = {
+  # SPC: {MSB, LSB, PC}
+  0: [16, 3,  48],  # Strings  :
+  1: [2,  3,  73],  # Flute Exp.
+  2: [0,  3,  71],  # Clarinet
+  3: [0,  3,  74],  # Recorder
+  4: [1,  3,  60],  # Fr. Horn 2
+  5: [0,  3,  46],  # Harp
+  6: [0,  3,  47],  # Timpani
+  7: [16, 3,   0],  # European Pf
+  8: [3,  3, 124],  # Door         # SFX
+  9: [0,  3,  69],  # English Horn
+  10:[2,  3,  45],  # Chamber Pizz
+  11:[2,  3, 120],  # String Slap  # SFX
+  12:[2,  3, 120],  # String Slap  # SFX
+  13:[2,  3, 120],  # String Slap  # SFX
+  14:[2,  3, 120],  # String Slap  # SFX
+}
 
 def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
@@ -211,7 +229,12 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         cur_tick,
         instrument
       ))
-      midi.addProgramChange(track, track, cur_tick, instrument)
+
+      # Do some remapping to make things sound decent from the start
+      midi.addControllerEvent(track, track, cur_tick,  0, INSTR_MAP[instrument][0])  # MSB
+      midi.addControllerEvent(track, track, cur_tick, 32, INSTR_MAP[instrument][1])  # LSB
+      midi.addProgramChange(  track, track, cur_tick,     INSTR_MAP[instrument][2])  # PC
+
       index += 1
       cur_tick += refresh_step
 
