@@ -168,7 +168,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
     # B7 Advance state by current refresh rate
     elif cmd == 0xb7:
       if verbose:
-        print('{:5d}: Extend len: {}'.format(
+        print('{:5d}: Rest. len: {}'.format(
           cur_tick,
           refresh_step
         ))
@@ -181,16 +181,21 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       index += 1
       # If enabled, all note length are directly specified length in ticks
       # By default driver uses lookup table
+
+      # TODO: This affects enginge globally, need to refactor code and
+      # process all the tracks 1-by-1
       direct_tick_len = bool(track_data[index] == 1)
 
 
     # BF Rest
     elif cmd == 0xbf:
       if verbose:
-        print('{:5d}: Rest len: {}'.format(
-          cur_tick,
-          refresh_step
+        print('{:5d}: Note cut (Not implemented!)'.format(
+          cur_tick
         ))
+
+      # Try to get last note on and note off events, then set note off event so that
+      # it matches current note length - refresh step value
 
       cur_tick += refresh_step
       index += 1
@@ -210,7 +215,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       _timer_div = 5000 / _arg  # $1388/X in driver
 
       speed = 8000 / _timer_div # Speed in Hz
-      print('{:5d}: Set timer speed to {}Hz ~{} BPM?'.format(
+      print('{:5d}: Set timer speed to {:.2f}Hz ~{:.2f} BPM?'.format(
         cur_tick,
         speed,
         speed *1.2
@@ -364,7 +369,8 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         if param < 0x31 and not note_length_set:
 
           if note_lengths[param] == 0:
-            print('{:5d}: Playing with legato not supported, using last length'.format(cur_tick))
+            print('{:5d}: Playing with legato not supported, using tick step'.format(cur_tick))
+            note_length = refresh_step
           else:
             note_length = note_lengths[param]
 
@@ -381,10 +387,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         else:
           note_param_done = True
 
-      _octave = note // 12
+      _octave = note // 12 - 1
       _base_n = note % 12
 
-      # Normally, we want to shortest of both,
+      # Normally, we want to use shortest of both,
       # as the driver is monophonic and will replace note it has been
       # playing in case the note is longer than refresh step.
       #
@@ -392,29 +398,27 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # will step into next state without stopping long note unlike BF
       _len = note_length
 
+      if _vel > 127:
+        print('{:5d}: Velocity {} can\'t be played!'.format(
+          cur_tick,
+          _vel))
+        exit(3)
 
       if not reuse_cmd:
-
         if verbose:
-          print('{:5d}: Playing {}{} gate: {} len: {} vol: {}'.format(
+          print('{:5d}: Playing {}{} gate: {} len: {} vel: {}'.format(
             cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
-
-        midi.addNote(track, track, note, cur_tick, _len, velocity)
-        cur_tick += refresh_step
-
-      elif reuse_cmd and velocity_set:
-        reuse_cmd = False
-        if verbose:
-          print('{:5d}: Re-playing {}{} gate: {} len: {} vol: {}'.format(
-            cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
-
-        midi.addNote(track, track, note, cur_tick, _len, velocity)
-        cur_tick += refresh_step
 
       else:
-
         reuse_cmd = False
-        cur_tick += refresh_step
+        if verbose:
+          print('{:5d}: Re-playing {}{} gate: {} len: {} vel: {}'.format(
+            cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
+
+
+
+      midi.addNote(track, track, note, cur_tick, note_length, _vel)
+      cur_tick += refresh_step
 
     # ################## Shorthand commands
 
@@ -448,7 +452,7 @@ def main():
     numTracks=8,
     ticks_per_quarternote=48,      # Try to count by SNES Timer 0
     eventtime_is_ticks=True,
-    deinterleave=False
+    deinterleave=True
   )
 
   # Extract tick length table at $10ac, $31 entries
