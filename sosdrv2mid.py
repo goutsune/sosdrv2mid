@@ -88,10 +88,12 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
 
     # B5 Set loop start
     elif cmd == 0xb5:
-      index +=1
       print('{:5d}: Set Restart to {:04X}'.format(
         cur_tick,
         ptr+index))
+
+      midi.addText(track, cur_tick, 'loopStart')
+      index +=1
 
     # B6 Loop end
     elif cmd == 0xb6:
@@ -100,9 +102,10 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         track+1,
         ptr+index))
 
-      index += 2
+      midi.addText(track, cur_tick, 'loopEnd')
+      index += 2  # Second parameter is loop counter, 0 means forever. unsupported yet
 
-    # BA Set Note offset
+    # BA Set Instrument offset
     elif cmd == 0xba:
       index += 1
       # This is mostly used to set octave, because note range is just 48 notes
