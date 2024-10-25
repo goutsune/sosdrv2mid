@@ -261,14 +261,17 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # Volume cmd takes 1 tick to execute, meaning it can be set while a note is
       # playing.
 
-      if volume > 0x32:  # Assume direct volume level if we are higher than that
-        _vol = volume
-        print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
-      else:
-        _vol = volume*8
+      # if volume > 0x32:  # Assume direct volume level if we are higher than that
+        # _vol = volume
+        # print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
+      # else:
+        # _vol = volume*8
 
       # Normalize to 7 bit integer
-      _vol = _vol // 2
+      _vol = int(volume / 30 * 127)
+      if _vol > 127:
+        print(f'Volume argument weird: {volume} > 30')
+        exit(2)
 
       print('{:5d}: Set volume to {}'.format(
         cur_tick,
