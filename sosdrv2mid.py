@@ -7,6 +7,8 @@ from midiutil import MIDIFile
 NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
+SC88_RST = b'\xF0\x41\x10\x42\x12\x00\x00\x7F\x00\x01\xF7'
+MAX_VOLUME = 30
 INSTR_MAP = {
   # SPC: [MSB, LSB, PC, Velocity offset]
   0: [16, 3,  48,  0.9],  # Strings  :
@@ -268,9 +270,9 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         # _vol = volume*8
 
       # Normalize to 7 bit integer
-      _vol = int(volume / 30 * 127)
+      _vol = int(volume / MAX_VOLUME * 127)
       if _vol > 127:
-        print(f'Volume argument weird: {volume} > 30')
+        print(f'Volume argument weird: {volume} > {MAX_VOLUME}')
         exit(2)
 
       print('{:5d}: Set volume to {}'.format(
