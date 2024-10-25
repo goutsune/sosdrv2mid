@@ -220,7 +220,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
         speed,
         speed *1.2
       ))
-      midi.addTempo(track, cur_tick, speed * 1.2)  # Beware, magic number
+      midi.addTempo(track, cur_tick, speed * 1.25)  # Beware, magic number
       index += 1
       cur_tick += refresh_step
 
