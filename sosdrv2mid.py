@@ -8,22 +8,22 @@ NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 INSTR_MAP = {
-  # SPC: {MSB, LSB, PC}
-  0: [16, 3,  48],  # Strings  :
-  1: [2,  3,  73],  # Flute Exp.
-  2: [0,  3,  71],  # Clarinet
-  3: [0,  3,  74],  # Recorder
-  4: [1,  3,  60],  # Fr. Horn 2
-  5: [0,  3,  46],  # Harp
-  6: [0,  3,  47],  # Timpani
-  7: [16, 3,   0],  # European Pf
-  8: [3,  3, 124],  # Door         # SFX
-  9: [0,  3,  69],  # English Horn
-  10:[2,  3,  45],  # Chamber Pizz
-  11:[2,  3, 120],  # String Slap  # SFX
-  12:[2,  3, 120],  # String Slap  # SFX
-  13:[2,  3, 120],  # String Slap  # SFX
-  14:[2,  3, 120],  # String Slap  # SFX
+  # SPC: [MSB, LSB, PC, Velocity offset]
+  0: [16, 3,  48,  0.9],  # Strings  :
+  1: [2,  3,  73,    1],  # Flute Exp.
+  2: [0,  3,  71,    1],  # Clarinet
+  3: [0,  3,  74,    1],  # Recorder
+  4: [1,  3,  60,    1],  # Fr. Horn 2
+  5: [0,  3,  46,    1],  # Harp
+  6: [0,  3,  47,    1],  # Timpani
+  7: [16, 3,   0,    1],  # European Pf
+  8: [3,  3, 124,    1],  # Door         # SFX
+  9: [0,  3,  69,  0.9],  # English Horn
+  10:[2,  3,  45,    1],  # Chamber Pizz
+  11:[2,  3, 120,    1],  # String Slap  # SFX
+  12:[2,  3, 120,    1],  # String Slap  # SFX
+  13:[2,  3, 120,    1],  # String Slap  # SFX
+  14:[2,  3, 120,    1],  # String Slap  # SFX
 }
 
 def process_track(track_data, ptr, all_data, note_lengths, midi, track):
@@ -397,6 +397,7 @@ def process_track(track_data, ptr, all_data, note_lengths, midi, track):
       # This however introduces problem, as there is B7 command that
       # will step into next state without stopping long note unlike BF
       _len = note_length
+      _vel = int(velocity * INSTR_MAP[instrument][3])
 
       if _vel > 127:
         print('{:5d}: Velocity {} can\'t be played!'.format(
