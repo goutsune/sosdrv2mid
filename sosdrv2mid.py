@@ -8,11 +8,11 @@ NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 SC88_RST = b'\xF0\x41\x10\x42\x12\x00\x00\x7F\x00\x01\xF7'
-MAX_VOLUME = 30
+MAX_VOLUME = 33
 INSTR_MAP = {
   # SPC: [MSB, LSB, PC, Velocity offset]
-  0: [16, 3,  48,  0.9],  # Strings  :
-  1: [2,  3,  73,    1],  # Flute Exp.
+  0: [16, 3,  48,    1],  # Strings  :
+  1: [1,  3,  73,    1],  # Flute    :
   2: [0,  3,  71,    1],  # Clarinet
   3: [0,  3,  74,    1],  # Recorder
   4: [1,  3,  60,    1],  # Fr. Horn 2
