@@ -28,422 +28,332 @@ INSTR_MAP = {
   14:[2,  3, 120,    1],  # String Slap  # SFX
 }
 
-def process_track(track_data, ptr, all_data, note_lengths, midi, track):
+'''Execution plan:
+1. Create class to define global sequence state that will store global echo/tempo/detune/timing parameters
+2. Creata class to define individual track state, it will be passed sequence class for processing.
+3. Create event execution loop that increases tick by 1 and calls track process_tick method, this method
+   should advance track state if current tick equals tracks' next_tick state and parses data accordingly.
+4. Split gigantic ifelse block inside track into individual class methods that emit midi messages into
+   sequence.
+'''
 
-  done = False
-  index = 0
-  cur_tick = 0
-  cmd = None
-  reuse_cmd = False
-
-  note = 0
-  note_offset = 0
-  cut = 0
-  refresh_step = 0
-  note_length = 0
-  velocity = 0
-  instrument = 0
+class Sequence:
   tempo = 0
+  tick = 0
   echo_vol = 0
   echo_delay = 0
   echo_feedback = 0
+  length_is_table = True
 
-  # TODO: I really need to process all tracks at the same time, it seems…
-  direct_tick_len = False  # If set, use direct value instead of lookup table
+  midi = None
+  note_lengths = []
 
-  verbose = True  # Log notes, rests and length changes
+  def __init__(self, output, note_len_tbl):
+    self.midi = output
+    self.note_lengths = note_len_tbl
 
-  while not done:
-    if not reuse_cmd:
-      cmd = track_data[index]
+  def update_tick(self):
+    self.tick = self.tick + 1
+
+
+class Track:
+
+  sequence = None
+  track_id = None
+  track = None  # Reference to specific MIDITrack
+
+  done = False
+  index = 0
+  restart_index = None
+  loop_counter = 0
+  data = None
+  data_offset = None  # RAM Offset for debugging messages
+  cmd = None
+  reuse_cmd = False
+
+  note_tick = 0  # A value of 0 will mean note-off command is to be sent
+  note_period = 0
+  note_offset = 0
+
+  sequence_tick = 1 # A value of 0 will mean next command is to be processed
+  sequence_period = 0
+
+  playing = False
+  note = None
+  velocity = 0
+
+  def __init__(self, seq, track_id, data, data_offset):
+    self.sequence = seq
+    self.track_id = track_id
+    self.track = seq.midi.tracks[track_id + 1]
+    self.data = data
+    self.data_offset = data_offset
+
+  def process_tick(self):
+    '''Tick processing routine.
+    We have 2 separate counters to take care of:
+    Note counter: when it reaches zero, we are to send note-off event, and that's it
+    Track counter: when it reaches zero, we are to fetch next event in data stream.
+
+    Track event is to be processed by event dispatcher and depending on event type we either
+    process it instantly and go to next event, or reload tick counter and bail out.
+    '''
+
+    if self.playing == True:
+      self.note_tick -= 1  # It is possible to set note length to 0, effectively allowing
+                           # for infinetly playing notes until rest message is received.
+
+    self.sequence_tick -= 1
+
+    if self.sequence_tick < 0:
+      raise RuntimeError("Somebody forgot to reset tick status after processing!")
+
+    # We reached end of note counter, let's send note_off event first
+    if self.note_tick == 0 and self.playing == True:
+      self.track.addNoteOff(
+        self.track_id,
+        self.note,
+        self.sequence.tick,
+        self.velocity)
+
+      self.playing = False  # To avoid sending note-off every tick
+
+    if self.sequence_tick == 0:
+      while self.sequence_tick == 0:  # This is to process all zero-time events at the same time
+        self.process_cmd()
+
+  def process_cmd(self):
+    '''Dispatch loop for command processing.
+    Possible cases:
+    0  00~7F - Arguments to previous stored command.
+    1. 80~B0 - Set note length, yes, 0xB0 included
+    2. B1~BF - Global commands, executed instantly
+    3. C0~CF - Voice commands, these reset tick timer after execution
+    4. D0~FF - Note commands, these play notes
+    '''
+
+    stream_byte = self.data[self.index]
+
+    # For bytes which are not raw command/note arguments, update
+    # track cmd (including notes) and switch on it
+    if stream_byte < 0x80:
+      cmd = self.cmd
     else:
-      cmd = last_cmd
-
-    # Store last command in buffer to reuse for shorthands
-    if cmd > 0xbf and not reuse_cmd:
-      last_cmd = cmd
-
-    # ##################### Note length range
-
-    # 80~AF Note length
-    if cmd > 0x7f and cmd <= 0xb0:
-      # Driver seems to do SBC with carry bit unset, that causes offset-by-1 error
-      if direct_tick_len:
-        refresh_step = cmd - 0x7f - 1
-      else:
-        refresh_step = note_lengths[cmd - 0x7f - 1]
-
-      if verbose:
-        print('{:5d}: Set period to {} ticks'.format(cur_tick, refresh_step))
-
-      index += 1
-
-    # ###################### BX commands
-
-    # B1 Disable track
-    elif cmd == 0xb1:
-      # That's it, we are done for this track, don't loop it.
-      print('Reached end of track {} at {:04X}!'.format(track+1, ptr+index))
-      print('================================\n')
-      done = True
-      continue
-
-    # B5 Set loop start
-    elif cmd == 0xb5:
-      print('{:5d}: Set Restart to {:04X}'.format(
-        cur_tick,
-        ptr+index))
-
-      midi.addText(track, cur_tick, 'loopStart')
-      index +=1
-
-    # B6 Loop end
-    elif cmd == 0xb6:
-      print('{:5d}: Reached end of track {} loop at {:04X}!'.format(
-        cur_tick,
-        track+1,
-        ptr+index))
-
-      midi.addText(track, cur_tick, 'loopEnd')
-      index += 2  # Second parameter is loop counter, 0 means forever. unsupported yet
-
-    # BA Set Instrument offset
-    elif cmd == 0xba:
-      index += 1
-      # This is mostly used to set octave, because note range is just 48 notes
-      note_offset = track_data[index] - 0x40  # no carry bug this time
-      print('{:5d}: Set note offset to {}'.format(
-        cur_tick,
-        note_offset
-      ))
-      index += 1
-
-    # BB Set Echo
-    elif cmd == 0xbb:
-      # BB VV DD FF
-      # Volume passed as-is,
-      # Delay is set to 4 if less than 4,
-      # Feedback passed as-is
-      index += 1
-      echo_vol = track_data[index]
-
-      index += 1
-      echo_delay = track_data[index]
-      if echo_delay < 4:
-        echo_delay = 4
-
-      index += 1
-      echo_feedback = track_data[index]
-
-      # TODO: Pass this as reverb level to channel, maybe?
-      print('{:5d}: Set echo vol:{:02X} del:{:02X} fdb:{:02X}'.format(
-        cur_tick,
-        echo_vol,
-        echo_delay,
-        echo_feedback))
-      index += 1
-
-    # B8 Set track status lower nibble
-    elif cmd == 0xb8:
-      index += 1
-      param = track_data[index]
-      print('{:5d}: Set track status low: {:02X}'.format(
-        cur_tick,
-        param))
-      index += 1
-
-    # BC Set track status bit 4
-    elif cmd == 0xbc:
-      # 7f sets track status to 90, that's basically kill all sound
-      index +=1
-      param = track_data[index]
-      if param == 0x7f:
-        print('{:5d}: Set track status to note-off'.format(
-          cur_tick))
-      else:
-        print('{:5d}: Unknown track status argument: {:02X}'.format(
-          cur_tick,
-          param))
-
-      index +=1
-
-    # B7 Advance state by current refresh rate
-    elif cmd == 0xb7:
-      if verbose:
-        print('{:5d}: Rest. len: {}'.format(
-          cur_tick,
-          refresh_step
-        ))
-
-      cur_tick += refresh_step
-      index += 1
-
-    # BE Set direct tick mode
-    elif cmd == 0xbe:
-      index += 1
-      # If enabled, all note length are directly specified length in ticks
-      # By default driver uses lookup table
-
-      # TODO: This affects enginge globally, need to refactor code and
-      # process all the tracks 1-by-1
-      direct_tick_len = bool(track_data[index] == 1)
-
-
-    # BF Rest
-    elif cmd == 0xbf:
-      if verbose:
-        print('{:5d}: Note cut (Not implemented!)'.format(
-          cur_tick
-        ))
-
-      # Try to get last note on and note off events, then set note off event so that
-      # it matches current note length - refresh step value
-
-      cur_tick += refresh_step
-      index += 1
-
-    # ####################### CX commands
-    # These commands advance engine time!
-
-    # C0 Set Tempo:
-    elif cmd == 0xc0:
-      # C0 XX
-      if not reuse_cmd:
-        index += 1
-      else:
-        reuse_cmd = False
-
-      _arg = track_data[index]  # TODO: How is this properly calculated?
-      _timer_div = 5000 / _arg  # $1388/X in driver
-
-      speed = 8000 / _timer_div # Speed in Hz
-      print('{:5d}: Set timer speed to {:.2f}Hz ~{:.2f} BPM?'.format(
-        cur_tick,
-        speed,
-        speed *1.2
-      ))
-      midi.addTempo(track, cur_tick, speed * 1.25)  # Beware, magic number
-      index += 1
-      cur_tick += refresh_step
-
-    # C1 Set instrument
-    elif cmd == 0xc1:
-      # C1 XX
-      if not reuse_cmd:
-        index += 1
-      else:
-        reuse_cmd = False
-
-      instrument = track_data[index]
-      print('{:5d}: Set instrument to {}'.format(
-        cur_tick,
-        instrument
-      ))
-
-      # Do some remapping to make things sound decent from the start
-      midi.addControllerEvent(track, track, cur_tick,  0, INSTR_MAP[instrument][0])  # MSB
-      midi.addControllerEvent(track, track, cur_tick, 32, INSTR_MAP[instrument][1])  # LSB
-      midi.addProgramChange(  track, track, cur_tick,     INSTR_MAP[instrument][2])  # PC
-
-      index += 1
-      cur_tick += refresh_step
-
-    # C2 Set volume
-    elif cmd == 0xc2:
-      if not reuse_cmd:
-        index += 1
-      else:
-        reuse_cmd = False
-
-      volume = track_data[index]
-      # 00-FF range, but the value is directly cotrolling gain register
-      # on the dsp. The tracks generally expect to be 1/8 volume at most to allow
-      # for mixing with no clipping, let's assume that too.
-
-      # Volume cmd takes 1 tick to execute, meaning it can be set while a note is
-      # playing.
-
-      # if volume > 0x32:  # Assume direct volume level if we are higher than that
-        # _vol = volume
-        # print('{:5d}: Track volume is above 50/255, not normalizing!'.format(cur_tick))
-      # else:
-        # _vol = volume*8
-
-      # Normalize to 7 bit integer
-      _vol = int(volume / MAX_VOLUME * 127)
-      if _vol > 127:
-        print(f'Volume argument weird: {volume} > {MAX_VOLUME}')
-        exit(2)
-
-      print('{:5d}: Set volume to {}'.format(
-        cur_tick,
-        _vol
-      ))
-
-
-      # It seems what we want here is to modify instrument's velocity, not set volume
-      midi.addControllerEvent(track, track, cur_tick, 7, _vol)
-
-      index += 1
-      cur_tick += refresh_step
-
-
-    # C5 Set Vibrato
-    elif cmd == 0xc5:
-      if not reuse_cmd:
-        index += 1
-      else:
-        reuse_cmd = False
-
-      vibrato = track_data[index]
-      # 00-FF Range, let's just set midi modulation controller to it
-
-      print('{:5d}: Set modulation to {}'.format(
-        cur_tick,
-        vibrato // 2
-      ))
-
-      midi.addControllerEvent(track, track, cur_tick, 1, vibrato // 2)
-      index += 1
-      cur_tick += refresh_step
-
-
-    # C3 Set panning
-    elif cmd == 0xc3:
-      if not reuse_cmd:
-        index += 1
-      else:
-        reuse_cmd = False
-
-      pan = track_data[index]
-      # From 00 to 7F, then wraps. 0 is right only, 7f is left only.
-      # 40 is a bit to the left, 3f is a bit to the right, there is no
-      # center.
-
-      # Limit to 7 bits, just like midi
-      pan = pan & 0b01111111
-
-      # Reverse value, in midi 0 is left
-      pan = 0x7f - pan
-      print('{:5d}: Set pan to {}'.format(
-        cur_tick,
-        pan
-      ))
-
-      midi.addControllerEvent(track, track, cur_tick, 10, pan)
-      index += 1
-      cur_tick += refresh_step
-
-    # CX Stub, 2 bytes
-    elif cmd > 0xbf and cmd < 0xd0:
-      print('{:5d}: Function {:02X} unimplemented. arg: {:02x}'.format(
-        cur_tick,
-        cmd,
-        track_data[index+1]))
-
-      if not reuse_cmd:
-        index += 2
-      else:
-        index += 1
-        reuse_cmd = False
-
-      cur_tick += refresh_step
-
-    # ################## D0~FF - Notes
-
-    elif cmd > 0xcf:
-      # NN P1? P2?,
-      # velocity is set if Param is between $32-$7f
-      # note cut is set if arg is between $00-$31
-      note = cmd - 0xd0 + note_offset + 36  # Transpose by 3 octaves, seems to be correct
-      # Read optional parameters for this note
-      note_param_done = False
-      note_length_set = False
-      velocity_set = False
-
-      if not reuse_cmd:
-        index += 1
-
-      while not note_param_done:
-        param = track_data[index]
-        if param > 0x7f:
-          note_param_done = True
-          continue
-
-        # TODO: Value of 0 enables legato!
-        if param < 0x31 and not note_length_set:
-
-          if note_lengths[param] == 0:
-            print('{:5d}: Playing with legato not supported, using tick step'.format(cur_tick))
-            note_length = refresh_step
-          else:
-            note_length = note_lengths[param]
-
-          note_length_set = True
-          note_param_done = True
-          index += 1
-
-        elif param >= 0x31 and not velocity_set:
-          #velocity = int((param - 0x31) / 0x4d * 0x7f)
-          velocity = param
-          velocity_set = True
-          index += 1
-
+      cmd = stream_byte
+      self.index += 1  # Shift data pointer to the first agument to be read
+
+    # Store voice commands and notes into track state for reuse
+    if cmd >= 0xC0:
+      self.cmd = cmd
+
+    print('M:{:2d} T:{:3d} Tr:{:01d} Ofc:{:04X} Executing {:02X}'.format(
+      self.sequence.tick // 192 + 1,
+      self.sequence.tick % 192,
+      self.track_id,
+      self.index,
+      cmd
+    ))
+
+    match cmd:  # Matches anyting in 0x80~0xFF range
+
+      case tick_len if tick_len in range(0x80, 0xB1):
+        tick_len -= 0x80  # Clear byte stream offset
+        if self.sequence.length_is_table:
+          self.sequence_period = self.sequence.note_lengths[tick_len]
         else:
-          note_param_done = True
+          self.sequence_period = tick_len
 
-      _octave = note // 12 - 1
-      _base_n = note % 12
+      # ###################### BX commands, these are instant
 
-      # Normally, we want to use shortest of both,
-      # as the driver is monophonic and will replace note it has been
-      # playing in case the note is longer than refresh step.
-      #
-      # This however introduces problem, as there is B7 command that
-      # will step into next state without stopping long note unlike BF
-      _len = note_length
-      _vel = int(velocity * INSTR_MAP[instrument][3])
+      case 0xB1:  # Track end
+        self.done = True
 
-      if _vel > 127:
-        print('{:5d}: Velocity {} can\'t be played!'.format(
-          cur_tick,
-          _vel))
-        exit(3)
+      case 0xB5:  # Loop start
+        self.restart_index = self.index
+        self.loop_counter = 0
 
-      if not reuse_cmd:
-        if verbose:
-          print('{:5d}: Playing {}{} gate: {} len: {} vel: {}'.format(
-            cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
+      case 0xB6:  # Loop end
+        # Hack, but exit when there is 0xB1 event after loop end
+        # TODO: Introduce loop_done status to try and capture whole-song
+        #       loop completitions.
+        if self.data[self.index + 1] == 0xB1:
+          self.done = True
 
-      else:
-        reuse_cmd = False
-        if verbose:
-          print('{:5d}: Re-playing {}{} gate: {} len: {} vel: {}'.format(
-            cur_tick, NOTES[_base_n], _octave, refresh_step, note_length, velocity))
+        num_loops = self.data[self.index]
 
+        if self.loop_counter < num_loops or num_loops == 0:
+          self.index = self.restart_index
+        else:
+          # Otherwise we advance normally and exit loop
+          self.index += 1
 
+        self.loop_counter += 1
 
-      midi.addNote(track, track, note, cur_tick, note_length, _vel)
-      cur_tick += refresh_step
+      case 0xB7 | 0xBD:  # Reload track timer without note-off
+        self.sequence_tick = self.sequence_period
 
-    # ################## Shorthand commands
+      case 0xB8 | 0xBC:
+        # Use unknown, 1 argument
+        self.index += 1
 
-    elif cmd < 0x80:
-      # This will pass down current byte to CMD we stored before,
-      # can be CX, or note command
-      reuse_cmd = True
-      print('{:5d}: Cmd < $7F, will execute {:02x} {:02x}'.format(
-        cur_tick,
-        last_cmd,
-        cmd))
+      case 0xBA:  # Set note offset
+        self.note_offset = self.data[self.index] - 0x40
+        self.index += 1
 
-    else:
-      print('{:5d}: Got unknown command {:02x}'.format(
-        cur_tick,
-        cmd))
-      index += 1
+      case 0xBB:  # Set Echo
+        # TODO: Implement this?
+        self.index += 3
 
-    # #################### Extra whatever to do after loop
+      case 0xBE:  # Switch tick length mode
+        length_is_table = bool(self.data[self.index] == 1)
+
+        self.sequence.length_is_table = length_is_table
+        self.index += 1
+
+      case 0xBF:  # Force-send note-off event and reload timer
+        if self.note is not None:
+          self.track.addNoteOff(
+            self.track_id,
+            self.note,
+            self.sequence.tick,
+            self.velocity)
+          self.playing = False
+
+        self.sequence_tick = self.sequence_period
+
+      # ####################### CX commands
+      # These commands restart tick counter
+
+      case 0xC0:  # Set Tempo
+        raw_tempo = self.data[self.index] # TODO: How is this properly calculated?
+
+        timer_div = 5000 / raw_tempo  # $1388/X in driver
+        speed = 8000 / timer_div  # Speed in Hz, it seems
+        midi_tempo = speed * 1.25  # Beware, magic number
+
+        self.sequence.midi.addTempo(0, self.sequence.tick, midi_tempo)
+
+        self.index += 1
+
+      case 0xC1:  # Set Instrument
+        raw_instrument = self.data[self.index]
+
+        # Do some remapping to make things sound decent from the start
+        self.track.addControllerEvent(
+          self.track_id,
+          self.sequence_tick,
+          0,   # Bank MSB
+          INSTR_MAP[raw_instrument][0])
+        self.track.addControllerEvent(
+          self.track_id,
+          self.sequence_tick,
+          32,  # Bank LSB
+          INSTR_MAP[raw_instrument][1])
+        self.track.addProgramChange(
+          self.track_id,
+          self.sequence_tick,
+          INSTR_MAP[raw_instrument][2])  # PC
+
+        self.index += 1
+
+      case 0xC2:  # Set Volume
+        raw_volume = self.data[self.index]
+
+        # Normalize to 7 bit integer
+        volume = int(raw_volume / MAX_VOLUME * 127)
+
+        if volume > 127:
+          raise ValueError(f'Volume argument weird: {raw_volume} > {MAX_VOLUME}')
+
+        # TODO: It seems what we want here is to modify instrument's velocity, not set volume
+        self.track.addControllerEvent(self.track_id, self.sequence.tick, 7, volume)
+
+        self.index += 1
+
+      case 0xC3:  # Set Pan
+        raw_pan = self.data[self.index]
+
+        # From 00 to 7F, then wraps. 0 is right only, 7f is left only.
+        # 40 is a bit to the left, 3f is a bit to the right, there is no
+        # center.
+
+        # Limit to 7 bits, just like midi
+        pan = raw_pan & 0b01111111
+        # Reverse value, in midi 0 is left
+        pan = 0x7f - pan
+
+        self.track.addControllerEvent(self.track_id, self.sequence.tick, 10, pan)
+
+        self.index += 1
+
+      case 0xC4:  # Vibrato Speed
+        # TODO: Implement Vibrato Speed
+        self.index += 1
+
+      case 0xC5:  # Vibrato Level
+        raw_vibrato = self.data[self.index]
+
+        # 00-FF Range, let's just set midi modulation controller to it
+        vibrato = raw_vibrato // 2
+        self.track.addControllerEvent(self.track_id, self.sequence.tick, 1, vibrato)
+
+        self.index += 1
+
+      case 0xC7:  # Sets track tuning offset
+        # TODO: Implement this as pitchbend event?
+        self.index += 1
+
+      # These are unimplemented and should not appear in track data
+      case 0xC6 | 0xC8 | 0xC9 | 0xCA | 0xCB | 0xCC | 0xCD | 0xCE | 0xCF:
+        raise NotImplementedError('Unimplemented command: {:02X}'.format(cmd))
+
+      case note if note in range(0xD0, 0x100):
+
+        # Take care of playing note if it is still playing at this point
+        if self.playing:
+          self.track.addNoteOff(self.track_id, self.note, self.sequence.tick, self.velocity)
+
+        note -= 0xd0  # Remove command offset
+        note += self.note_offset  # Apply instrument offset
+        note += 36   # Transpose by 3 octaves, seems to be correct
+        self.note = note  # Store so we can send note-off later
+
+        # There can be optional note arguments:
+        # 0x00~0x31 - Note length
+        # 0x32~0x7F - Velocity
+        # These can be set only once per tick loop
+        length_set = False
+        velocity_set = False
+
+        while not (length_set and velocity_set):
+          param = self.data[self.index]
+
+          if param <= 0x31 and not length_set:
+            self.note_period = self.sequence.note_lengths[param]
+            length_set = True
+            self.index += 1
+
+          elif 0x32 < param < 0x80 and not velocity_set:
+            #velocity = int((param - 0x31) / 0x4d * 0x7f)
+            self.velocity = param  # TODO: Substract 0x31 and combine with volume!
+            velocity_set = True
+            self.index += 1
+
+          else:  # We got normal command, bail out
+            break
+
+        self.track.addNoteOn(self.track_id, note, self.sequence.tick, self.velocity)
+
+        # Now we need to restart note ticks
+        self.note_tick = self.note_period
+        self.playing = True
+
+      case _:  # To catch match bugs
+        raise ValueError(f'Got unknown command {cmd}!')
+
+    # Restart track timer for all C0~FF commands
+    if cmd in range(0xC0, 0x100):
+      self.sequence_tick = self.sequence_period
 
 
 def main():
@@ -458,29 +368,31 @@ def main():
     numTracks=8,
     ticks_per_quarternote=48,      # Try to count by SNES Timer 0
     eventtime_is_ticks=True,
-    deinterleave=True
+    deinterleave=False
   )
 
   # Extract tick length table at $10ac, $31 entries
   note_len_tbl = data[NOTE_LEN_OFFSET:NOTE_LEN_OFFSET+0x31]
 
-  # Extract 8 tracks ranging from 1 to 8
-  for track in range(0, 8):
+  # Initializa sequence state, our MIDI instance goes there
+  seq = Sequence(output, note_len_tbl)
 
-    address = TRACK_PTR_LIST + track*2
+  # Initialize each track and save them to list
+  tracks = []
+
+  for track_id in range(0,8):
+    address = TRACK_PTR_LIST + track_id*2
     ptr = unpack('<H', data[address:address+2])[0]
+    tracks.append(Track(seq, track_id, data[ptr:], ptr))
 
-    print('\nBegin processing track {} at {:04X}'.format(track+1, ptr))
-    print('================================')
+  # Loop over each track while incrementing tick counter
+  while not all([x.done for x in tracks]):
+    for track in tracks:
+      track.process_tick()
 
-    result = process_track(
-      data[ptr:],
-      ptr,
-      data,
-      note_len_tbl,
-      output,
-      track)
+    seq.update_tick()
 
+  # At this point we are happy with all tracks being "done", let's save
   with open(sys.argv[1] + '.mid', 'wb') as file_h:
     output.writeFile(file_h)
 
