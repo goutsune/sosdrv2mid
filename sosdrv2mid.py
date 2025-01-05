@@ -8,22 +8,22 @@ NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
 INSTR_MAP = {
-  # SPC: [MSB, LSB, PC, Velocity offset]
-  0: [16, 3,  48,    1],  # Strings  :
-  1: [1,  3,  73,    1],  # Flute    :
-  2: [0,  3,  71,    1],  # Clarinet
-  3: [0,  3,  74,    1],  # Recorder
-  4: [1,  3,  60,    1],  # Fr. Horn 2
-  5: [0,  3,  46,    1],  # Harp
-  6: [0,  3,  47,    1],  # Timpani
-  7: [16, 3,   0,    1],  # European Pf
-  8: [3,  3, 124,    1],  # Door         # SFX
-  9: [0,  3,  69,  0.9],  # English Horn
-  10:[2,  3,  45,    1],  # Chamber Pizz
-  11:[2,  3, 120,    1],  # String Slap  # SFX
-  12:[2,  3, 120,    1],  # String Slap  # SFX
-  13:[2,  3, 120,    1],  # String Slap  # SFX
-  14:[2,  3, 120,    1],  # String Slap  # SFX
+  # SPC: [MSB,LSB,PC, Velocity offset]
+  0:     [16, 3,  48,  0.5],  # St. Strings
+  1:     [1,  3,  73,    1],  # Flute    :
+  2:     [0,  3,  71,    1],  # Clarinet
+  3:     [0,  3,  74,    1],  # Recorder
+  4:     [1,  3,  60,    1],  # Fr. Horn 2
+  5:     [0,  3,  46,    1],  # Harp
+  6:     [0,  3,  47,    1],  # Timpani
+  7:     [16, 3,   0,    1],  # European Pf
+  8:     [3,  3, 124,    1],  # Door         # SFX
+  9:     [0,  3,  69,  0.9],  # English Horn
+  10:    [2,  3,  45,    1],  # Chamber Pizz
+  11:    [2,  3, 120,    1],  # String Slap  # SFX
+  12:    [2,  3, 120,    1],  # String Slap  # SFX
+  13:    [2,  3, 120,    1],  # String Slap  # SFX
+  14:    [2,  3, 120,    1],  # String Slap  # SFX
 }
 
 '''Execution plan:
