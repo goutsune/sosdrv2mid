@@ -504,7 +504,7 @@ def main():
     seq.update_tick()
 
   # At this point we are happy with all tracks being "done", let's save
-  with open(sys.argv[1] + '.mid', 'wb') as file_h:
+  with open(sys.argv[1][0:-4] + '.mid', 'wb') as file_h:
     output.writeFile(file_h)
 
 if __name__ == '__main__':
