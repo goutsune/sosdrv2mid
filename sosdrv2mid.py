@@ -358,12 +358,8 @@ class Track:
       self.cmd = cmd
 
     print('M:{:2d} T:{:3d} Tr:{:01d} Ofc:{:04X} Executing {:02X}'.format(
-      self.sequence.tick // 192 + 1,
-      self.sequence.tick % 192,
-      self.track_id,
-      self.index,
-      cmd
-    ))
+      self.sequence.tick // 192 + 1, self.sequence.tick % 192, self.track_id,
+      self.index, cmd))
 
     match cmd:  # Matches anyting in 0x80~0xFF range
 
@@ -436,8 +432,9 @@ class Track:
       case _:  # To catch match bugs
         raise ValueError(f'Got unknown command {cmd}!')
 
-    # Restart track timer for all C0~FF commands
-    if cmd in range(0xC0, 0x100):
+    # Restart track timer for all C0~FF commands, do this at the end to make sure
+    # new timer period is fetched first, if any.
+    if cmd >= 0xC0:
       self.reload_timer()
 
 
