@@ -168,23 +168,27 @@ class Track:
   def set_instrument(self):
     raw_instrument = self.data[self.index]
 
+    self.instrument = raw_instrument
+
     # Do some remapping to make things sound decent from the start
     self.track.addControllerEvent(
       self.track_id,
       self.sequence.tick,
       0,   # Bank MSB
-      INSTR_MAP[raw_instrument][0],
+      INSTR_MAP[self.instrument][0],
       insertion_order=3)
+
     self.track.addControllerEvent(
       self.track_id,
       self.sequence.tick,
       32,  # Bank LSB
-      INSTR_MAP[raw_instrument][1],
+      INSTR_MAP[self.instrument][1],
       insertion_order=4)
+
     self.track.addProgramChange(
       self.track_id,
       self.sequence.tick,
-      INSTR_MAP[raw_instrument][2],
+      INSTR_MAP[self.instrument][2],
       insertion_order=5)  # PC
 
     self.index += 1
