@@ -64,31 +64,31 @@ class Sequence:
 
 class Track:
 
-  sequence = None
-  track_id = None
-  track = None  # Reference to specific MIDITrack
-
-  done = False
-  index = 0
-  restart_stack = None
   loop_counter = 0
-  data = None
+  sequence = None  # Reference to global sequencer state
+  track_id = None  # Track/Channel number
+  track = None     # Reference to specific MIDITrack
+
+  playing = False   # Denotes if note tick is non-zero
+  finished = False  # Track has finished and will not play anymore
+  done = False      # Track has tick counter reloaded and we can go to other track instread
+  index = 0         # Data position offset
+  restart_stack = None  # Stack for holding nested loop restart positions
   global_loop_happens = False  # Set this when endless loop is reached
+  data = None       # Data byte stream
   data_offset = None  # RAM Offset for debugging messages
-  cmd = None
-  reuse_cmd = False
+  cmd = None        # Last loaded command to be used with shorthands
+  note = None       # Last played note for tracking note-off commands
+  velocity = None   # Last set velocity for use with shorthands
+  instrument = None # Last set instrument for instrument map lookup
 
-  note_tick = 0  # A value of 0 will mean note-off command is to be sent
-  note_period = 0
-  note_offset = 0
+  note_tick = 0    # A value of 0 will mean note-off command is to be sent
+  note_period = 0  # Timer reload value for notes
+  note_offset = 0  # Instrument specific offset in semitones
 
-  sequence_tick = 0 # A value of 0 will mean next command is to be processed
-  sequence_period = 0
+  sequence_tick = 0    # A value of 0 will mean next command is to be processed
+  sequence_period = 0  # Timer reload value for track state
 
-  playing = False
-  note = None
-  velocity = 0
-  instrument = 0
   def __init__(self, seq, track_id, data, data_offset):
     self.sequence = seq
     self.track_id = track_id
