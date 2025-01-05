@@ -72,8 +72,8 @@ class Track:
   index = 0
   restart_stack = None
   loop_counter = 0
-  global_loop_counter = None  # Limit endless loops to this number
   data = None
+  global_loop_happens = False  # Set this when endless loop is reached
   data_offset = None  # RAM Offset for debugging messages
   cmd = None
   reuse_cmd = False
@@ -89,18 +89,16 @@ class Track:
   note = None
   velocity = 0
   instrument = 0
-
-  def __init__(self, seq, track_id, data, data_offset, loop_count):
+  def __init__(self, seq, track_id, data, data_offset):
     self.sequence = seq
     self.track_id = track_id
     self.track = seq.midi.tracks[track_id + 1]
     self.data = data
     self.data_offset = data_offset
-    self.global_loop_counter = loop_count
     self.restart_stack = []
 
   def track_end(self):
-    self.done = True
+    self.finished = True
 
   def loop_start(self):
     self.restart_stack.append(self.index)
@@ -109,10 +107,7 @@ class Track:
   def loop_end(self):
     # Detect looped track end if there is 0xB1 after endless loop
     if self.data[self.index + 1] == 0xB1 and self.data[self.index] == 0x00:
-      self.global_loop_counter -= 1
-      # And we are done after processing whole loop defined number of times
-      if self.global_loop_counter == 0:
-        self.done = True
+      self.global_loop_happens = True
 
     self.loop_counter += 1
     num_loops = self.data[self.index]
@@ -128,6 +123,11 @@ class Track:
   def reload_timer(self):
     self.sequence_tick = self.sequence_period
 
+    # We can have timed commands executed instantly,
+    # must not advance tick on them
+    if self.sequence_period > 0:
+      self.done = True
+
   def noop_arg(self, step):
     self.index += step
 
@@ -142,7 +142,7 @@ class Track:
     self.index += 1
 
   def rest(self):
-    if self.note is not None:
+    if self.note is not None and self.playing:
       self.track.addNoteOff(
         self.track_id,
         self.note,
@@ -150,7 +150,7 @@ class Track:
         self.velocity)
       self.playing = False
 
-    self.sequence_tick = self.sequence_period
+    self.reload_timer()
 
   def set_tempo(self):
     raw_tempo = self.data[self.index] # TODO: How is this properly calculated?
@@ -286,6 +286,14 @@ class Track:
     self.note_tick = self.note_period
     self.playing = True
 
+  def cleanup(self):
+    '''Stop playing notes when stopping sequencer.
+    This should take of 1-tick NoteOn events at the end of aburptly exited loop
+    '''
+
+    if self.note_tick != 0 and self.playing == True:
+      self.track.eventList.pop()
+
 
   def process_tick(self):
     '''Tick processing routine.
@@ -297,8 +305,11 @@ class Track:
     process it instantly and go to next event, or reload tick counter and bail out.
     '''
 
-    if self.done:
+    if self.finished:
       return
+
+    self.done = False  # Reset track status for processing new time tick
+    self.global_loop_happens = False
 
     if self.playing == True:
       self.note_tick -= 1  # It is possible to set note length to 0, effectively allowing
@@ -308,7 +319,7 @@ class Track:
       self.sequence_tick -= 1
 
     # We reached end of note counter, let's send note_off event first
-    if self.note_tick == 0 and self.playing == True:
+    if self.note_tick == 0 and self.playing:
       self.track.addNoteOff(
         self.track_id,
         self.note,
@@ -317,7 +328,7 @@ class Track:
 
       self.playing = False  # To avoid sending note-off every tick
 
-    while self.sequence_tick == 0 and not self.done:
+    while self.sequence_tick == 0 and not self.finished:
         self.process_cmd()
 
   def process_cmd(self):
@@ -455,7 +466,7 @@ def main():
   for track_id in range(0,8):
     address = TRACK_PTR_LIST + track_id*2
     ptr = unpack('<H', data[address:address+2])[0]
-    tracks.append(Track(seq, track_id, data[ptr:], ptr, 2))
+    tracks.append(Track(seq, track_id, data[ptr:], ptr))
 
 
   # Add SC88 Reset to the first track
@@ -465,10 +476,28 @@ def main():
     track.track.addControllerEvent(index, 0, 0x78, 0x00, insertion_order=0)
     track.track.addControllerEvent(index, 0, 0x79, 0x00, insertion_order=0)
 
+  loop_counter = 2
+  states = [False for x in tracks]  # Prepare global loop tracker list
+
   # Loop over each track while incrementing tick counter
-  while not all([x.done for x in tracks]):
+  while True:
     for track in tracks:
+      # This will set all loop flags when it happened on latest track (e.g. echo)
+      if track.global_loop_happens:
+        states[track.track_id] = True
       track.process_tick()
+      if track.finished:
+        states[track.track_id] = True
+
+    # Break from the loop if we got all tracks saying global loop has happened
+    if all(states):
+      states = [False for x in tracks]
+      loop_counter -= 1
+
+    if loop_counter == 0:
+      for track in tracks:
+        track.cleanup()  # Clear hanging notes in the middle of loop exit
+      break
 
     seq.update_tick()
 
