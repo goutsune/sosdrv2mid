@@ -417,6 +417,9 @@ class Track:
       case 0xB8 | 0xBC:  # Use unknown, 1 argument
         self.noop_arg(1)
 
+      case 0xB9:  # Fine-tune
+        self.noop_arg(1)  # TODO: Implement fine tuning?
+
       case 0xBA:  # Set note offset
         self.set_note_offset()
 
