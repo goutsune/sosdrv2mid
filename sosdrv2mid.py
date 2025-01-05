@@ -87,6 +87,7 @@ class Track:
   playing = False
   note = None
   velocity = 0
+  instrument = 0
 
   def __init__(self, seq, track_id, data, data_offset):
     self.sequence = seq
@@ -354,8 +355,10 @@ class Track:
             self.index += 1
 
           elif 0x32 <= param < 0x80 and not velocity_set:
-            velocity = param - 0x31
-            self.velocity = lin_to_exp(velocity, b=0.01, in_top=0x4f)
+            velocity = (param - 0x31)
+            velocity *= INSTR_MAP[self.instrument][3]  # Add velocity offset
+            self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4f)
+
             velocity_set = True
             self.index += 1
 
