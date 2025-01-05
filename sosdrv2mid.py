@@ -73,10 +73,11 @@ class Track:
   done = False      # Track has tick counter reloaded and we can go to other track instread
   index = 0         # Data position offset
   restart_stack = None  # Stack for holding nested loop restart positions
-  loop_counter = None      # Loop counter stack
+  loop_counter = None   # Loop counter stack
+  call_stack = None     # Subroutine call stack
   global_loop_happens = False  # Set this when endless loop is reached
   data = None       # Data byte stream
-  data_offset = None  # RAM Offset for debugging messages
+  data_offset = None  # RAM Offset for debugging messages and jumps
   cmd = None        # Last loaded command to be used with shorthands
   note = None       # Last played note for tracking note-off commands
   velocity = None   # Last set velocity for use with shorthands
@@ -97,9 +98,27 @@ class Track:
     self.data_offset = data_offset
     self.restart_stack = []
     self.loop_counter = []
+    self.call_stack = []
 
-  def track_end(self):
+  def disable_track(self):
     self.finished = True
+
+  def jump(self):
+    raw_address = int.from_bytes(self.data[self.index:self.index+2], 'little')
+    address = raw_address - self.data_offset
+
+    self.index = address
+
+  def gosub(self):
+    self.call_stack.append(self.index + 2)
+    # Try to detect track end by assuming that direct jump after gosub
+    # is the end. There can be no B1 marker, making this tricky.
+    if self.data[self.index + 2] == 0xB2:
+      self.global_loop_happens = True
+    self.jump()
+
+  def returnsub(self):
+    self.index = self.call_stack.pop()
 
   def loop_start(self):
     self.restart_stack.append(self.index)
@@ -375,7 +394,16 @@ class Track:
       # ###################### BX commands, these are instant
 
       case 0xB1:  # Track end
-        self.track_end()
+        self.disable_track()
+
+      case 0xB2:  # Jump to address
+        self.jump()
+
+      case 0xB3:  # Play subroutine
+        self.gosub()
+
+      case 0xB4:  # Exit subroutine
+        self.returnsub()
 
       case 0xB5:  # Loop start
         self.loop_start()
