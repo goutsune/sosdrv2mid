@@ -691,9 +691,9 @@ UpdateSeqPtr:
 .ORG $0bc7
 FuncJumptable:
 	  dw DisableTrack                   ; $b1
-	  dw CmdB2                          ; $b2
-	  dw CmdB3                          ; $b3
-	  dw CmdB4                          ; $b4
+	  dw JumpToAddr                     ; $b2
+	  dw EnterSubroutine                ; $b3
+	  dw ExitSubroutine                 ; $b4
 	  dw SetLoopStart                   ; $b5
 	  dw ProcessLoopEnd                 ; $b6
 	  dw ResetNoteTicks                 ; $b7
@@ -727,7 +727,7 @@ DirectNoteLen:
 0c07: c4 1f     mov   DIRECT_TICK,a     ; Store flag in DP, with this we manually set note length
 0c09: 5f ad 0b  jmp   AddCmdLenResetNoteTicks
 
-CmdB3:
+EnterSubroutine:
 0c0c: 8d 0f     mov   y,#WORK_0F
 0c0e: f7 10     mov   a,(CHAN_PTR)+y
 0c10: 9c        dec   a
@@ -745,7 +745,7 @@ CmdB3:
 0c21: 84 15     adc   a,$15
 0c23: d7 10     mov   (CHAN_PTR)+y,a
 
-CmdB2:
+JumpToAddr:
 0c25: eb 16     mov   y,CMD_PARAM_OFC
 0c27: f7 14     mov   a,(CUR_SEQ_PTR)+y
 0c29: 2d        push  a
@@ -757,11 +757,11 @@ CmdB2:
 0c31: 8f 00 16  mov   CMD_PARAM_OFC,#$00
 0c34: 5f b7 0b  jmp   UpdateSeqPtr
 
-CmdB4:
+ExitSubroutine:
 0c37: 8d 0f     mov   y,#WORK_0F
 0c39: f7 10     mov   a,(CHAN_PTR)+y
 0c3b: 68 40     cmp   a,#$40
-0c3d: b0 f5     bcs   $0c34
+0c3d: b0 f5     bcs   $0c34                 ; jmp   UpdateSeqPtr
 0c3f: 2d        push  a
 0c40: bc        inc   a
 0c41: bc        inc   a
