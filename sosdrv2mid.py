@@ -397,9 +397,6 @@ def main():
   # Initializa sequence state, our MIDI instance goes there
   seq = Sequence(output, note_len_tbl)
 
-  # Add SC88 Reset to the first track
-  output.addSysEx(0, 0, 0x41, SC88_RST)
-
   # Initialize each track and save them to list
   tracks = []
 
@@ -407,6 +404,14 @@ def main():
     address = TRACK_PTR_LIST + track_id*2
     ptr = unpack('<H', data[address:address+2])[0]
     tracks.append(Track(seq, track_id, data[ptr:], ptr))
+
+
+  # Add SC88 Reset to the first track
+  #output.addSysEx(0, 0, 0x41, SC88_RST)
+  # Add "All Sounds Off" and "Reset All Controllers" messages
+  for index, track in enumerate(tracks):
+    track.track.addControllerEvent(index, 0, 0x78, 0x00, insertion_order=0)
+    track.track.addControllerEvent(index, 0, 0x79, 0x00, insertion_order=0)
 
   # Loop over each track while incrementing tick counter
   while not all([x.done for x in tracks]):
