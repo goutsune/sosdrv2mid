@@ -642,8 +642,8 @@ ProcessSeqData:
 0b87: d7 10     mov   (CHAN_PTR)+y,a
 
 0b89: 68 cf     cmp   a,#$cf
-0b8b: 90 03     bcc   $0b90             ; data < $cf?
-0b8d: 5f d5 0d  jmp   ProcessNoteCmd   ; > $cf are notes
+0b8b: 90 03     bcc   $0b90             ; data ≤ $cf?
+0b8d: 5f d5 0d  jmp   ProcessNoteCmd    ; > $cf are notes
 0b90: 68 b1     cmp   a,#$b1
 0b92: b0 12     bcs   CmdSwitch         ; data ≥ $b1?
 
@@ -1016,25 +1016,30 @@ TrackRest:
 0dd2: 5f af 0b  jmp   ResetNoteTicks
 
 ProcessNoteCmd:
-0dd5: 80        setc                    ; $ff ≥ A ≥ $cf
+0dd5: 80        setc                    ; $ff ≥ A ≥ $d0
 0dd6: a8 d0     sbc   a,#d0             ; substract $d0 from note param
 0dd8: 8d 08     mov   y,#NOTE_NUM
-0dda: d7 10     mov   (CHAN_PTR)+y,a
-0ddc: 8f 00 d8  mov   $d8,#0            ; Reset flag at $d8
+0dda: d7 10     mov   (CHAN_PTR)+y,a    ; Store note to work area
+0ddc: 8f 00 d8  mov   $d8,#0            ; Reset flags at $d8
+
+; Loop here
 0ddf: eb 16     mov   y,CMD_PARAM_OFC
 0de1: f7 14     mov   a,(CUR_SEQ_PTR)+y ; Load first byte after CMD
-0de3: 30 21     bmi   $0e06             ; jump if A > $7f, so argument is 0-7f
+0de3: 30 21     bmi   $0e06             ; Finish if A > $7f, so valid argument is 00-7F
 0de5: 68 31     cmp   a,#$31
-0de7: b0 0d     bcs   $0df6             ; A ≥ $31?
-0de9: 03 d8 1a  bbs0  $d8,$0e06         ; If bit 0 at $d8 is set, jump
+0de7: b0 0d     bcs   $0df6             ; Jump if parameter ≥ $31
+
+; Arg is < $31
+0de9: 03 d8 1a  bbs0  $d8,$0e06         ; If note len is already set, finish
 0dec: 02 d8     set0  $d8               ; Set bit 0 at $d8, param is < $31
 0dee: ab 16     inc   CMD_PARAM_OFC
 0df0: 8d 07     mov   y,#NOTE_LEN       ; No need to substract, store as note cut
 0df2: d7 10     mov   (CHAN_PTR)+y,a
 0df4: 2f e9     bra   $0ddf
 
-0df6: 23 d8 0d  bbs1  $d8,$0e06         ; If bit 1 is set at $d8, ignore
-0df9: 22 d8     set1  $d8               ; Set bit 1 at $d8, param is $31 ≤ PP ≤ $7f
+; Arg is $7f ≥ PP ≥ $31
+0df6: 23 d8 0d  bbs1  $d8,$0e06         ; If velocity is already set, finish
+0df9: 22 d8     set1  $d8               ; Set bit 1 at $d8, param is $31 ≤
 0dfb: ab 16     inc   CMD_PARAM_OFC
 0dfd: 80        setc
 0dfe: a8 31     sbc   a,#$31            ; Substract $31 from parameter
