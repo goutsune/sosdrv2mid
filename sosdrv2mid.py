@@ -81,7 +81,7 @@ class Track:
   note_period = 0
   note_offset = 0
 
-  sequence_tick = 1 # A value of 0 will mean next command is to be processed
+  sequence_tick = 0 # A value of 0 will mean next command is to be processed
   sequence_period = 0
 
   playing = False
@@ -105,14 +105,15 @@ class Track:
     process it instantly and go to next event, or reload tick counter and bail out.
     '''
 
+    if self.done:
+      return
+
     if self.playing == True:
       self.note_tick -= 1  # It is possible to set note length to 0, effectively allowing
                            # for infinetly playing notes until rest message is received.
 
-    self.sequence_tick -= 1
-
-    if self.sequence_tick < 0:
-      raise RuntimeError("Somebody forgot to reset tick status after processing!")
+    if self.sequence_tick > 0:
+      self.sequence_tick -= 1
 
     # We reached end of note counter, let's send note_off event first
     if self.note_tick == 0 and self.playing == True:
@@ -124,8 +125,7 @@ class Track:
 
       self.playing = False  # To avoid sending note-off every tick
 
-    if self.sequence_tick == 0:
-      while self.sequence_tick == 0:  # This is to process all zero-time events at the same time
+    while self.sequence_tick == 0 and not self.done:
         self.process_cmd()
 
   def process_cmd(self):
