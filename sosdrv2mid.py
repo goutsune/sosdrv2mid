@@ -99,6 +99,194 @@ class Track:
     self.global_loop_counter = loop_count
     self.restart_stack = []
 
+  def track_end(self):
+    self.done = True
+
+  def loop_start(self):
+    self.restart_stack.append(self.index)
+    self.loop_counter = 0
+
+  def loop_end(self):
+    # Detect looped track end if there is 0xB1 after endless loop
+    if self.data[self.index + 1] == 0xB1 and self.data[self.index] == 0x00:
+      self.global_loop_counter -= 1
+      # And we are done after processing whole loop defined number of times
+      if self.global_loop_counter == 0:
+        self.done = True
+
+    self.loop_counter += 1
+    num_loops = self.data[self.index]
+
+    if self.loop_counter < num_loops or num_loops == 0:
+      self.index = self.restart_stack.pop()
+      self.restart_stack.append(self.index)
+    else:
+      # Otherwise we advance normally and exit loop
+      self.restart_stack.pop()
+      self.index += 1
+
+  def reload_timer(self):
+    self.sequence_tick = self.sequence_period
+
+  def noop_arg(self, step):
+    self.index += step
+
+  def set_note_offset(self):
+    self.note_offset = self.data[self.index] - 0x40
+    self.index += 1
+
+  def tick_mode(self):
+    length_is_table = bool(self.data[self.index] == 1)
+
+    self.sequence.length_is_table = length_is_table
+    self.index += 1
+
+  def rest(self):
+    if self.note is not None:
+      self.track.addNoteOff(
+        self.track_id,
+        self.note,
+        self.sequence.tick,
+        self.velocity)
+      self.playing = False
+
+    self.sequence_tick = self.sequence_period
+
+  def set_tempo(self):
+    raw_tempo = self.data[self.index] # TODO: How is this properly calculated?
+
+    timer_div = 5000 / raw_tempo  # $1388/X in driver
+    speed = 8000 / timer_div  # Speed in Hz, it seems
+    midi_tempo = speed * 1.25  # Beware, magic number
+
+    self.sequence.midi.addTempo(0, self.sequence.tick, midi_tempo)
+
+    self.index += 1
+
+  def set_instrument(self):
+    raw_instrument = self.data[self.index]
+
+    # Do some remapping to make things sound decent from the start
+    self.track.addControllerEvent(
+      self.track_id,
+      self.sequence.tick,
+      0,   # Bank MSB
+      INSTR_MAP[raw_instrument][0],
+      insertion_order=3)
+    self.track.addControllerEvent(
+      self.track_id,
+      self.sequence.tick,
+      32,  # Bank LSB
+      INSTR_MAP[raw_instrument][1],
+      insertion_order=4)
+    self.track.addProgramChange(
+      self.track_id,
+      self.sequence.tick,
+      INSTR_MAP[raw_instrument][2],
+      insertion_order=5)  # PC
+
+    self.index += 1
+
+  def set_volume(self):
+    raw_volume = self.data[self.index]
+
+    # Normalize to 7 bit integer
+    volume = lin_to_exp(raw_volume, b=0.07)
+
+    self.track.addControllerEvent(
+      self.track_id,
+      self.sequence.tick,
+      7,
+      volume,
+      insertion_order=100)
+
+    self.index += 1
+
+  def set_panning(self):
+    raw_pan = self.data[self.index]
+
+    # From 00 to 7F, then wraps. 0 is right only, 7f is left only.
+    # 40 is a bit to the left, 3f is a bit to the right, there is no
+    # center.
+
+    # Limit to 7 bits, just like midi
+    pan = raw_pan & 0b01111111
+    # Reverse value, in midi 0 is left
+    pan = 0x7f - pan
+
+    self.track.addControllerEvent(
+      self.track_id,
+      self.sequence.tick,
+      10,
+      pan,
+      insertion_order=100)
+
+    self.index += 1
+
+  def set_vibrato_level(self):
+    raw_vibrato = self.data[self.index]
+
+    # 00-FF Range, let's just set midi modulation controller to it
+    vibrato = raw_vibrato // 2
+    self.track.addControllerEvent(
+      self.track_id,
+      self.sequence.tick,
+      1,
+      vibrato,
+      insertion_order=10)
+
+    self.index += 1
+
+  def set_tick_period(self, tick_len):
+    tick_len -= 0x80  # Clear byte stream offset
+    if self.sequence.length_is_table:
+      self.sequence_period = self.sequence.note_lengths[tick_len]
+    else:
+      self.sequence_period = tick_len
+
+  def update_note(self, note):
+    # Take care of playing note if it is still playing at this point
+    if self.playing:
+      self.track.addNoteOff(self.track_id, self.note, self.sequence.tick, self.velocity)
+
+    note -= 0xd0  # Remove command offset
+    note += self.note_offset  # Apply instrument offset
+    note += 36   # Transpose by 3 octaves, seems to be correct
+    self.note = note  # Store so we can send note-off later
+
+    # There can be optional note arguments:
+    # 0x00~0x31 - Note length
+    # 0x32~0x7F - Velocity
+    # These can be set only once per tick loop
+    length_set = False
+    velocity_set = False
+
+    while not (length_set and velocity_set):
+      param = self.data[self.index]
+
+      if param <= 0x31 and not length_set:
+        self.note_period = self.sequence.note_lengths[param]
+        length_set = True
+        self.index += 1
+
+      elif 0x32 <= param < 0x80 and not velocity_set:
+        velocity = (param - 0x31)
+        velocity *= INSTR_MAP[self.instrument][3]  # Add velocity offset
+        self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4f)
+
+        velocity_set = True
+        self.index += 1
+
+      else:  # We got normal command, bail out
+        break
+
+    self.track.addNoteOn(self.track_id, note, self.sequence.tick, self.velocity)
+
+    # Now we need to restart note ticks
+    self.note_tick = self.note_period
+    self.playing = True
+
+
   def process_tick(self):
     '''Tick processing routine.
     We have 2 separate counters to take care of:
@@ -166,223 +354,78 @@ class Track:
 
     match cmd:  # Matches anyting in 0x80~0xFF range
 
+      # ###################### Engine step setup (there is no separate note step setup)
+
       case tick_len if tick_len in range(0x80, 0xB1):
-        tick_len -= 0x80  # Clear byte stream offset
-        if self.sequence.length_is_table:
-          self.sequence_period = self.sequence.note_lengths[tick_len]
-        else:
-          self.sequence_period = tick_len
+        self.set_tick_period(tick_len)
 
       # ###################### BX commands, these are instant
 
       case 0xB1:  # Track end
-        self.done = True
+        self.track_end()
 
       case 0xB5:  # Loop start
-        self.restart_stack.append(self.index)
-        self.loop_counter = 0
+        self.loop_start()
 
       case 0xB6:  # Loop end
-        # Detect looped track end if there is 0xB1 after endless loop
-        if self.data[self.index + 1] == 0xB1 and self.data[self.index] == 0x00:
-          self.global_loop_counter -= 1
-          # And we are done after processing whole loop defined number of times
-          if self.global_loop_counter == 0:
-            self.done = True
-
-        self.loop_counter += 1
-        num_loops = self.data[self.index]
-
-        if self.loop_counter < num_loops or num_loops == 0:
-          self.index = self.restart_stack.pop()
-          self.restart_stack.append(self.index)
-        else:
-          # Otherwise we advance normally and exit loop
-          self.restart_stack.pop()
-          self.index += 1
-
+        self.loop_end()
 
       case 0xB7 | 0xBD:  # Reload track timer without note-off
-        self.sequence_tick = self.sequence_period
+        self.reload_timer()
 
-      case 0xB8 | 0xBC:
-        # Use unknown, 1 argument
-        self.index += 1
+      case 0xB8 | 0xBC:  # Use unknown, 1 argument
+        self.noop_arg(1)
 
       case 0xBA:  # Set note offset
-        self.note_offset = self.data[self.index] - 0x40
-        self.index += 1
+        self.set_note_offset()
 
       case 0xBB:  # Set Echo
-        # TODO: Implement this?
-        self.index += 3
+        self.noop_arg(3)  # TODO: Implement this?
 
       case 0xBE:  # Switch tick length mode
-        length_is_table = bool(self.data[self.index] == 1)
-
-        self.sequence.length_is_table = length_is_table
-        self.index += 1
+        self.tick_mode()
 
       case 0xBF:  # Force-send note-off event and reload timer
-        if self.note is not None:
-          self.track.addNoteOff(
-            self.track_id,
-            self.note,
-            self.sequence.tick,
-            self.velocity)
-          self.playing = False
+        self.rest()
 
-        self.sequence_tick = self.sequence_period
-
-      # ####################### CX commands
-      # These commands restart tick counter
+      # ###################### CX commands, they restart sequence ticks
 
       case 0xC0:  # Set Tempo
-        raw_tempo = self.data[self.index] # TODO: How is this properly calculated?
-
-        timer_div = 5000 / raw_tempo  # $1388/X in driver
-        speed = 8000 / timer_div  # Speed in Hz, it seems
-        midi_tempo = speed * 1.25  # Beware, magic number
-
-        self.sequence.midi.addTempo(0, self.sequence.tick, midi_tempo)
-
-        self.index += 1
+        self.set_tempo()
 
       case 0xC1:  # Set Instrument
-        raw_instrument = self.data[self.index]
-
-        # Do some remapping to make things sound decent from the start
-        self.track.addControllerEvent(
-          self.track_id,
-          self.sequence.tick,
-          0,   # Bank MSB
-          INSTR_MAP[raw_instrument][0],
-          insertion_order=3)
-        self.track.addControllerEvent(
-          self.track_id,
-          self.sequence.tick,
-          32,  # Bank LSB
-          INSTR_MAP[raw_instrument][1],
-          insertion_order=4)
-        self.track.addProgramChange(
-          self.track_id,
-          self.sequence.tick,
-          INSTR_MAP[raw_instrument][2],
-          insertion_order=5)  # PC
-
-        self.index += 1
+        self.set_instrument()
 
       case 0xC2:  # Set Volume
-        raw_volume = self.data[self.index]
-
-        # Normalize to 7 bit integer
-        volume = lin_to_exp(raw_volume, b=0.07)
-
-        self.track.addControllerEvent(
-          self.track_id,
-          self.sequence.tick,
-          7,
-          volume,
-          insertion_order=100)
-
-        self.index += 1
+        self.set_volume()
 
       case 0xC3:  # Set Pan
-        raw_pan = self.data[self.index]
-
-        # From 00 to 7F, then wraps. 0 is right only, 7f is left only.
-        # 40 is a bit to the left, 3f is a bit to the right, there is no
-        # center.
-
-        # Limit to 7 bits, just like midi
-        pan = raw_pan & 0b01111111
-        # Reverse value, in midi 0 is left
-        pan = 0x7f - pan
-
-        self.track.addControllerEvent(
-          self.track_id,
-          self.sequence.tick,
-          10,
-          pan,
-          insertion_order=100)
-
-        self.index += 1
+        self.set_panning()
 
       case 0xC4:  # Vibrato Speed
-        # TODO: Implement Vibrato Speed
-        self.index += 1
+        self.noop_arg(1)  # TODO: Implement Vibrato Speed
 
       case 0xC5:  # Vibrato Level
-        raw_vibrato = self.data[self.index]
-
-        # 00-FF Range, let's just set midi modulation controller to it
-        vibrato = raw_vibrato // 2
-        self.track.addControllerEvent(
-          self.track_id,
-          self.sequence.tick,
-          1,
-          vibrato,
-          insertion_order=10)
-
-        self.index += 1
+        self.set_vibrato_level()
 
       case 0xC7:  # Sets track tuning offset
-        # TODO: Implement this as pitchbend event?
-        self.index += 1
+        self.noop_arg(1)  # TODO: Implement this as pitchbend event?
 
       # These are unimplemented and should not appear in track data
       case 0xC6 | 0xC8 | 0xC9 | 0xCA | 0xCB | 0xCC | 0xCD | 0xCE | 0xCF:
         raise NotImplementedError('Driver unknown command: {:02X}'.format(cmd))
 
+      # ###################### Notes
+
       case note if note in range(0xD0, 0x100):
-
-        # Take care of playing note if it is still playing at this point
-        if self.playing:
-          self.track.addNoteOff(self.track_id, self.note, self.sequence.tick, self.velocity)
-
-        note -= 0xd0  # Remove command offset
-        note += self.note_offset  # Apply instrument offset
-        note += 36   # Transpose by 3 octaves, seems to be correct
-        self.note = note  # Store so we can send note-off later
-
-        # There can be optional note arguments:
-        # 0x00~0x31 - Note length
-        # 0x32~0x7F - Velocity
-        # These can be set only once per tick loop
-        length_set = False
-        velocity_set = False
-
-        while not (length_set and velocity_set):
-          param = self.data[self.index]
-
-          if param <= 0x31 and not length_set:
-            self.note_period = self.sequence.note_lengths[param]
-            length_set = True
-            self.index += 1
-
-          elif 0x32 <= param < 0x80 and not velocity_set:
-            velocity = (param - 0x31)
-            velocity *= INSTR_MAP[self.instrument][3]  # Add velocity offset
-            self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4f)
-
-            velocity_set = True
-            self.index += 1
-
-          else:  # We got normal command, bail out
-            break
-
-        self.track.addNoteOn(self.track_id, note, self.sequence.tick, self.velocity)
-
-        # Now we need to restart note ticks
-        self.note_tick = self.note_period
-        self.playing = True
+        self.update_note(note)
 
       case _:  # To catch match bugs
         raise ValueError(f'Got unknown command {cmd}!')
 
     # Restart track timer for all C0~FF commands
     if cmd in range(0xC0, 0x100):
-      self.sequence_tick = self.sequence_period
+      self.reload_timer()
 
 
 def main():
