@@ -6,7 +6,7 @@ from midiutil import MIDIFile
 
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
-SC88_RST = b'\xF0\x41\x10\x42\x12\x00\x00\x7F\x00\x01\xF7'
+SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
 INSTR_MAP = {
   # SPC: [MSB, LSB, PC, Velocity offset]
   0: [16, 3,  48,    1],  # Strings  :
@@ -250,18 +250,18 @@ class Track:
           self.sequence.tick,
           0,   # Bank MSB
           INSTR_MAP[raw_instrument][0],
-          insertion_order=0)
+          insertion_order=3)
         self.track.addControllerEvent(
           self.track_id,
           self.sequence.tick,
           32,  # Bank LSB
           INSTR_MAP[raw_instrument][1],
-          insertion_order=1)
+          insertion_order=4)
         self.track.addProgramChange(
           self.track_id,
           self.sequence.tick,
           INSTR_MAP[raw_instrument][2],
-          insertion_order=2)  # PC
+          insertion_order=5)  # PC
 
         self.index += 1
 
@@ -396,6 +396,9 @@ def main():
 
   # Initializa sequence state, our MIDI instance goes there
   seq = Sequence(output, note_len_tbl)
+
+  # Add SC88 Reset to the first track
+  output.addSysEx(0, 0, 0x41, SC88_RST)
 
   # Initialize each track and save them to list
   tracks = []
