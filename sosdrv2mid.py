@@ -64,7 +64,6 @@ class Sequence:
 
 class Track:
 
-  loop_counter = 0
   sequence = None  # Reference to global sequencer state
   track_id = None  # Track/Channel number
   track = None     # Reference to specific MIDITrack
@@ -74,6 +73,7 @@ class Track:
   done = False      # Track has tick counter reloaded and we can go to other track instread
   index = 0         # Data position offset
   restart_stack = None  # Stack for holding nested loop restart positions
+  loop_counter = None      # Loop counter stack
   global_loop_happens = False  # Set this when endless loop is reached
   data = None       # Data byte stream
   data_offset = None  # RAM Offset for debugging messages
@@ -96,28 +96,30 @@ class Track:
     self.data = data
     self.data_offset = data_offset
     self.restart_stack = []
+    self.loop_counter = []
 
   def track_end(self):
     self.finished = True
 
   def loop_start(self):
     self.restart_stack.append(self.index)
-    self.loop_counter = 0
+    self.loop_counter.append(0)
 
   def loop_end(self):
     # Detect looped track end if there is 0xB1 after endless loop
     if self.data[self.index + 1] == 0xB1 and self.data[self.index] == 0x00:
       self.global_loop_happens = True
 
-    self.loop_counter += 1
+    self.loop_counter[-1] += 1  # Increment counter on stack top
     num_loops = self.data[self.index]
 
-    if self.loop_counter < num_loops or num_loops == 0:
+    if self.loop_counter[-1] < num_loops or num_loops == 0:
       self.index = self.restart_stack.pop()
       self.restart_stack.append(self.index)
     else:
       # Otherwise we advance normally and exit loop
       self.restart_stack.pop()
+      self.loop_counter.pop()
       self.index += 1
 
   def reload_timer(self):
