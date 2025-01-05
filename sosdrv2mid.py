@@ -70,8 +70,9 @@ class Track:
 
   done = False
   index = 0
-  restart_index = None
+  restart_stack = None
   loop_counter = 0
+  global_loop_counter = None  # Limit endless loops to this number
   data = None
   data_offset = None  # RAM Offset for debugging messages
   cmd = None
@@ -89,12 +90,14 @@ class Track:
   velocity = 0
   instrument = 0
 
-  def __init__(self, seq, track_id, data, data_offset):
+  def __init__(self, seq, track_id, data, data_offset, loop_count):
     self.sequence = seq
     self.track_id = track_id
     self.track = seq.midi.tracks[track_id + 1]
     self.data = data
     self.data_offset = data_offset
+    self.global_loop_counter = loop_count
+    self.restart_stack = []
 
   def process_tick(self):
     '''Tick processing routine.
@@ -176,23 +179,26 @@ class Track:
         self.done = True
 
       case 0xB5:  # Loop start
-        self.restart_index = self.index
+        self.restart_stack.append(self.index)
         self.loop_counter = 0
 
       case 0xB6:  # Loop end
-        # Hack, but exit when there is 0xB1 event after loop end
-        # TODO: Introduce loop_done status to try and capture whole-song
-        #       loop completitions.
-        if self.data[self.index + 1] == 0xB1:
-          self.done = True
+        # Detect looped track end if there is 0xB1 after endless loop
+        if self.data[self.index + 1] == 0xB1 and self.data[self.index] == 0x00:
+          self.global_loop_counter -= 1
+          # And we are done after processing whole loop defined number of times
+          if self.global_loop_counter == 0:
+            self.done = True
 
         self.loop_counter += 1
         num_loops = self.data[self.index]
 
         if self.loop_counter < num_loops or num_loops == 0:
-          self.index = self.restart_index
+          self.index = self.restart_stack.pop()
+          self.restart_stack.append(self.index)
         else:
           # Otherwise we advance normally and exit loop
+          self.restart_stack.pop()
           self.index += 1
 
 
@@ -406,7 +412,7 @@ def main():
   for track_id in range(0,8):
     address = TRACK_PTR_LIST + track_id*2
     ptr = unpack('<H', data[address:address+2])[0]
-    tracks.append(Track(seq, track_id, data[ptr:], ptr))
+    tracks.append(Track(seq, track_id, data[ptr:], ptr, 2))
 
 
   # Add SC88 Reset to the first track
