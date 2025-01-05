@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 
-import os, sys, io
+import os, sys, io, math
 from struct import *
 from midiutil import MIDIFile
 
-NOTES = ('C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-')
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 SC88_RST = b'\xF0\x41\x10\x42\x12\x00\x00\x7F\x00\x01\xF7'
-MAX_VOLUME = 33
 INSTR_MAP = {
   # SPC: [MSB, LSB, PC, Velocity offset]
   0: [16, 3,  48,    1],  # Strings  :
@@ -36,6 +34,14 @@ INSTR_MAP = {
 4. Split gigantic ifelse block inside track into individual class methods that emit midi messages into
    sequence.
 '''
+
+
+def lin_to_exp(x, a=1, b=0.05, in_top=127, out_top=127):
+
+    output = a * (1 - math.exp(-b * x))
+    output = output * (out_top / (1 - math.exp(-b * in_top)))
+    return int(output)
+
 
 class Sequence:
   tempo = 0
@@ -263,12 +269,8 @@ class Track:
         raw_volume = self.data[self.index]
 
         # Normalize to 7 bit integer
-        volume = int(raw_volume / MAX_VOLUME * 127)
+        volume = lin_to_exp(raw_volume, b=0.07)
 
-        if volume > 127:
-          raise ValueError(f'Volume argument weird: {raw_volume} > {MAX_VOLUME}')
-
-        # TODO: It seems what we want here is to modify instrument's velocity, not set volume
         self.track.addControllerEvent(
           self.track_id,
           self.sequence.tick,
@@ -351,9 +353,9 @@ class Track:
             length_set = True
             self.index += 1
 
-          elif 0x32 < param < 0x80 and not velocity_set:
-            #velocity = int((param - 0x31) / 0x4d * 0x7f)
-            self.velocity = param  # TODO: Substract 0x31 and combine with volume!
+          elif 0x32 <= param < 0x80 and not velocity_set:
+            velocity = param - 0x31
+            self.velocity = lin_to_exp(velocity, b=0.01, in_top=0x4f)
             velocity_set = True
             self.index += 1
 
