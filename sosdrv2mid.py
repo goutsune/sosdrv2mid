@@ -241,18 +241,21 @@ class Track:
         # Do some remapping to make things sound decent from the start
         self.track.addControllerEvent(
           self.track_id,
-          self.sequence_tick,
+          self.sequence.tick,
           0,   # Bank MSB
-          INSTR_MAP[raw_instrument][0])
+          INSTR_MAP[raw_instrument][0],
+          insertion_order=0)
         self.track.addControllerEvent(
           self.track_id,
-          self.sequence_tick,
+          self.sequence.tick,
           32,  # Bank LSB
-          INSTR_MAP[raw_instrument][1])
+          INSTR_MAP[raw_instrument][1],
+          insertion_order=1)
         self.track.addProgramChange(
           self.track_id,
-          self.sequence_tick,
-          INSTR_MAP[raw_instrument][2])  # PC
+          self.sequence.tick,
+          INSTR_MAP[raw_instrument][2],
+          insertion_order=2)  # PC
 
         self.index += 1
 
@@ -266,7 +269,12 @@ class Track:
           raise ValueError(f'Volume argument weird: {raw_volume} > {MAX_VOLUME}')
 
         # TODO: It seems what we want here is to modify instrument's velocity, not set volume
-        self.track.addControllerEvent(self.track_id, self.sequence.tick, 7, volume)
+        self.track.addControllerEvent(
+          self.track_id,
+          self.sequence.tick,
+          7,
+          volume,
+          insertion_order=100)
 
         self.index += 1
 
@@ -282,7 +290,12 @@ class Track:
         # Reverse value, in midi 0 is left
         pan = 0x7f - pan
 
-        self.track.addControllerEvent(self.track_id, self.sequence.tick, 10, pan)
+        self.track.addControllerEvent(
+          self.track_id,
+          self.sequence.tick,
+          10,
+          pan,
+          insertion_order=100)
 
         self.index += 1
 
@@ -295,7 +308,12 @@ class Track:
 
         # 00-FF Range, let's just set midi modulation controller to it
         vibrato = raw_vibrato // 2
-        self.track.addControllerEvent(self.track_id, self.sequence.tick, 1, vibrato)
+        self.track.addControllerEvent(
+          self.track_id,
+          self.sequence.tick,
+          1,
+          vibrato,
+          insertion_order=10)
 
         self.index += 1
 
@@ -305,7 +323,7 @@ class Track:
 
       # These are unimplemented and should not appear in track data
       case 0xC6 | 0xC8 | 0xC9 | 0xCA | 0xCB | 0xCC | 0xCD | 0xCE | 0xCF:
-        raise NotImplementedError('Unimplemented command: {:02X}'.format(cmd))
+        raise NotImplementedError('Driver unknown command: {:02X}'.format(cmd))
 
       case note if note in range(0xD0, 0x100):
 
