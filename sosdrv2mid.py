@@ -186,6 +186,7 @@ class Track:
         if self.data[self.index + 1] == 0xB1:
           self.done = True
 
+        self.loop_counter += 1
         num_loops = self.data[self.index]
 
         if self.loop_counter < num_loops or num_loops == 0:
@@ -194,7 +195,6 @@ class Track:
           # Otherwise we advance normally and exit loop
           self.index += 1
 
-        self.loop_counter += 1
 
       case 0xB7 | 0xBD:  # Reload track timer without note-off
         self.sequence_tick = self.sequence_period
