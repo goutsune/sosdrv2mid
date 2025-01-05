@@ -7,15 +7,18 @@ from midiutil import MIDIFile
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
-INSTR_MAP = {
+INSTR_MAP = None
+
+# Example instrument map definition as seen in Wondrous Magic
+{
   # SPC: [MSB,LSB,PC, Velocity offset]
-  0:     [16, 3,  48,  0.5],  # St. Strings
+  0:     [16, 3,  48,    1],  # St. Strings
   1:     [1,  3,  73,    1],  # Flute    :
   2:     [0,  3,  71,    1],  # Clarinet
   3:     [0,  3,  74,    1],  # Recorder
   4:     [1,  3,  60,    1],  # Fr. Horn 2
   5:     [0,  3,  46,    1],  # Harp
-  6:     [0,  3,  47,    1],  # Timpani
+  6:     [0,  3,  47,  0.8],  # Timpani
   7:     [16, 3,   0,    1],  # European Pf
   8:     [3,  3, 124,    1],  # Door         # SFX
   9:     [0,  3,  69,  0.9],  # English Horn
@@ -52,11 +55,13 @@ class Sequence:
   length_is_table = True
 
   midi = None
-  note_lengths = []
+  note_lengths = None
+  instrument_map = None
 
-  def __init__(self, output, note_len_tbl):
+  def __init__(self, output, note_len_tbl, instrument_map):
     self.midi = output
     self.note_lengths = note_len_tbl
+    self.instrument_map  = instrument_map
 
   def update_tick(self):
     self.tick = self.tick + 1
@@ -194,20 +199,20 @@ class Track:
       self.track_id,
       self.sequence.tick,
       0,   # Bank MSB
-      INSTR_MAP[self.instrument][0],
+      self.sequence.instrument_map[self.instrument][0],
       insertion_order=3)
 
     self.track.addControllerEvent(
       self.track_id,
       self.sequence.tick,
       32,  # Bank LSB
-      INSTR_MAP[self.instrument][1],
+      self.sequence.instrument_map[self.instrument][1],
       insertion_order=4)
 
     self.track.addProgramChange(
       self.track_id,
       self.sequence.tick,
-      INSTR_MAP[self.instrument][2],
+      self.sequence.instrument_map[self.instrument][2],
       insertion_order=5)  # PC
 
     self.index += 1
@@ -296,7 +301,7 @@ class Track:
 
       elif 0x31 <= param < 0x80 and not velocity_set:
         velocity = (param - 0x31)
-        velocity *= INSTR_MAP[self.instrument][3]  # Add velocity offset
+        velocity *= self.sequence.instrument_map[self.instrument][3]  # Add velocity offset
         self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4f)
 
         velocity_set = True
@@ -474,13 +479,18 @@ class Track:
 
 
 def main():
-  if len(sys.argv) < 2:
+  if len(sys.argv) < 3:
     exit(1)
 
-  with open(sys.argv[1], 'rb') as file_h:
+  with open(sys.argv[2], 'rb') as file_h:
     file_h.seek(0x100, os.SEEK_SET)  # SPC RAM image at 0x100
     data = file_h.read(0x10000)      # Read 64K
 
+  with open(sys.argv[1], 'r') as file_h:
+    tmp_map = json.load(file_h)
+
+    # Let's use object hook next time maybe...
+    instrument_map = {int(k):v for k,v in tmp_map.items()}
   output = MIDIFile(
     numTracks=8,
     ticks_per_quarternote=48,      # Try to count by SNES Timer 0
@@ -492,7 +502,7 @@ def main():
   note_len_tbl = data[NOTE_LEN_OFFSET:NOTE_LEN_OFFSET+0x31]
 
   # Initializa sequence state, our MIDI instance goes there
-  seq = Sequence(output, note_len_tbl)
+  seq = Sequence(output, note_len_tbl, instrument_map)
 
   # Initialize each track and save them to list
   tracks = []
@@ -536,7 +546,7 @@ def main():
     seq.update_tick()
 
   # At this point we are happy with all tracks being "done", let's save
-  with open(sys.argv[1][0:-4] + '.mid', 'wb') as file_h:
+  with open(sys.argv[2][0:-4] + '.mid', 'wb') as file_h:
     output.writeFile(file_h)
 
 if __name__ == '__main__':
