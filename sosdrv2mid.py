@@ -4,8 +4,6 @@ import os, sys, io, math, json
 from struct import *
 from midiutil import MIDIFile
 
-NOTE_LEN_OFFSET = 0x10ac
-TRACK_PTR_LIST = 0x1402
 SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
 
 # Example instrument map definition as seen in Wondrous Magic
@@ -27,16 +25,6 @@ SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
   13:    [2,  3, 120,    1],  # String Slap  # SFX
   14:    [2,  3, 120,    1],  # String Slap  # SFX
 }
-
-'''Execution plan:
-1. Create class to define global sequence state that will store global echo/tempo/detune/timing parameters
-2. Creata class to define individual track state, it will be passed sequence class for processing.
-3. Create event execution loop that increases tick by 1 and calls track process_tick method, this method
-   should advance track state if current tick equals tracks' next_tick state and parses data accordingly.
-4. Split gigantic ifelse block inside track into individual class methods that emit midi messages into
-   sequence.
-'''
-
 
 def lin_to_exp(x, a=1, b=0.05, in_top=127, out_top=127):
 
@@ -486,10 +474,13 @@ def main():
     data = file_h.read(0x10000)      # Read 64K
 
   with open(sys.argv[1], 'r') as file_h:
-    tmp_map = json.load(file_h)
+    settings = json.load(file_h)
 
-    # Let's use object hook next time maybe...
-    instrument_map = {int(k):v for k,v in tmp_map.items()}
+  # Let's use object hook next time maybe...
+  instrument_map = {int(k):v for k,v in settings['instruments'].items()}
+  note_length_table = int(settings['note_len'], 0)
+  track_pointer_table = int(settings['tracks'], 0)
+
   output = MIDIFile(
     numTracks=8,
     ticks_per_quarternote=48,      # Try to count by SNES Timer 0
@@ -498,7 +489,7 @@ def main():
   )
 
   # Extract tick length table at $10ac, $31 entries
-  note_len_tbl = data[NOTE_LEN_OFFSET:NOTE_LEN_OFFSET+0x31]
+  note_len_tbl = data[note_length_table:note_length_table+0x31]
 
   # Initializa sequence state, our MIDI instance goes there
   seq = Sequence(output, note_len_tbl, instrument_map)
@@ -507,7 +498,7 @@ def main():
   tracks = []
 
   for track_id in range(0, 8):
-    address = TRACK_PTR_LIST + track_id*2
+    address = track_pointer_table + track_id*2
     ptr = unpack('<H', data[address:address+2])[0]
     tracks.append(Track(seq, track_id, data, ptr))
 
