@@ -457,7 +457,7 @@ class Track:
         self.update_note(note)
 
       case _:  # To catch match bugs
-        raise ValueError(f'Got unknown command {cmd}!')
+        raise ValueError(f'Got unknown command {cmd:02X}!')
 
     # Restart track timer for all C0~FF commands, do this at the end to make sure
     # new timer period is fetched first, if any.
