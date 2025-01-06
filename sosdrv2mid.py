@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
-import os, sys, io, math
+import os, sys, io, math, json
 from struct import *
 from midiutil import MIDIFile
 
 NOTE_LEN_OFFSET = 0x10ac
 TRACK_PTR_LIST = 0x1402
 SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
-INSTR_MAP = None
 
 # Example instrument map definition as seen in Wondrous Magic
 {
@@ -76,7 +75,7 @@ class Track:
   playing = False   # Denotes if note tick is non-zero
   finished = False  # Track has finished and will not play anymore
   done = False      # Track has tick counter reloaded and we can go to other track instread
-  index = 0         # Data position offset
+  index = 0         # Absolute data position offset
   restart_stack = None  # Stack for holding nested loop restart positions
   loop_counter = None   # Loop counter stack
   call_stack = None     # Subroutine call stack
@@ -101,6 +100,7 @@ class Track:
     self.track = seq.midi.tracks[track_id + 1]
     self.data = data
     self.data_offset = data_offset
+    self.index = data_offset
     self.restart_stack = []
     self.loop_counter = []
     self.call_stack = []
@@ -110,9 +110,8 @@ class Track:
 
   def jump(self):
     raw_address = int.from_bytes(self.data[self.index:self.index+2], 'little')
-    address = raw_address - self.data_offset
 
-    self.index = address
+    self.index = raw_address
 
   def gosub(self):
     self.call_stack.append(self.index + 2)
@@ -507,10 +506,10 @@ def main():
   # Initialize each track and save them to list
   tracks = []
 
-  for track_id in range(0,8):
+  for track_id in range(0, 8):
     address = TRACK_PTR_LIST + track_id*2
     ptr = unpack('<H', data[address:address+2])[0]
-    tracks.append(Track(seq, track_id, data[ptr:], ptr))
+    tracks.append(Track(seq, track_id, data, ptr))
 
 
   # Add SC88 Reset to the first track
