@@ -3,3 +3,5 @@
 /example.asm
 *.bak
 *.mid
+/old_stuff
+*.spc
