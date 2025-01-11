@@ -262,14 +262,18 @@ class Track:
       self.sequence_period = tick_len
 
   def update_note(self, note):
-    # Take care of playing note if it is still playing at this point
-    if self.playing:
-      self.track.addNoteOff(self.track_id, self.note, self.sequence.tick, self.velocity)
 
     note -= 0xd0  # Remove command offset
     note += self.note_offset  # Apply instrument offset
     note += 36   # Transpose by 3 octaves, seems to be correct
-    self.note = note  # Store so we can send note-off later
+
+    # Normally, we need to turn note off only if it's in playing state.
+    # And we also must do this only if we have note period > 0, otherwise we want to play
+    # endlessly in "legato" mode. Finally, because this is MIDI, we need to turn note off
+    # if it's different even in legato mode to simulate monophonic playback.
+    if self.playing and (self.note_period > 0 or self.note != note):
+      self.track.addNoteOff(self.track_id, self.note, self.sequence.tick, self.velocity)
+      self.playing = False
 
     # There can be optional note arguments:
     # 0x00~0x31 - Note length
@@ -297,11 +301,13 @@ class Track:
       else:  # We got normal command, bail out
         break
 
-    self.track.addNoteOn(self.track_id, note, self.sequence.tick, self.velocity)
+    if not self.playing:
+      self.track.addNoteOn(self.track_id, note, self.sequence.tick, self.velocity)
 
     # Now we need to restart note ticks
     self.note_tick = self.note_period
     self.playing = True
+    self.note = note  # Store so we can send note-off later
 
   def cleanup(self):
     '''Stop playing notes when stopping sequencer.
