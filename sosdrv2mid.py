@@ -281,12 +281,12 @@ class Track:
     while not (length_set and velocity_set):
       param = self.data[self.index]
 
-      if param < 0x31 and not length_set:
+      if param <= 0x31 and not length_set:
         self.note_period = self.sequence.note_lengths[param]
         length_set = True
         self.index += 1
 
-      elif 0x31 <= param < 0x80 and not velocity_set:
+      elif 0x31 < param < 0x80 and not velocity_set:
         velocity = (param - 0x31)
         velocity *= self.sequence.instrument_map[self.instrument][3]  # Add velocity offset
         self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4f)
@@ -488,8 +488,8 @@ def main():
     deinterleave=False
   )
 
-  # Extract tick length table at $10ac, $31 entries
-  note_len_tbl = data[note_length_table:note_length_table+0x31]
+  # Extract tick length table at $10ac, $32 entries
+  note_len_tbl = data[note_length_table:note_length_table+0x32]
 
   # Initializa sequence state, our MIDI instance goes there
   seq = Sequence(output, note_len_tbl, instrument_map)
