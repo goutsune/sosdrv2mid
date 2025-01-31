@@ -113,7 +113,8 @@ class Track:
     self.jump()
 
   def returnsub(self):
-    self.index = self.call_stack.pop()
+    if self.call_stack:  # Ignore attempts to return with empty stack
+      self.index = self.call_stack.pop()
 
   def loop_start(self):
     self.restart_stack.append(self.index)
