@@ -6,7 +6,9 @@ from midiutil import MIDIFile
 
 SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
 
-# Example instrument map definition as seen in Wondrous Magic
+# Example instrument map definition as seen in Wondrous Magic,
+# This is explanation to what happens in JSON configurations
+'''
 {
   # SPC: [MSB,LSB,PC, Velocity offset]
   0:     [16, 3,  48,    1],  # St. Strings
@@ -25,10 +27,11 @@ SC88_RST = b'\x10\x42\x12\x00\x00\x7F\x00\x01'
   13:    [2,  3, 120,    1],  # String Slap  # SFX
   14:    [2,  3, 120,    1],  # String Slap  # SFX
 }
+'''
 
-def lin_to_exp(x, a=1, b=0.05, in_top=127, out_top=127):
+def lin_to_exp(x, b=0.05, in_top=127, out_top=127):
 
-    output = a * (1 - math.exp(-b * x))
+    output = (1 - math.exp(-b * x))
     output = output * (out_top / (1 - math.exp(-b * in_top)))
     return int(output)
 
