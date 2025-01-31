@@ -295,9 +295,9 @@ class Track:
         self.index += 1
 
       elif 0x31 < param < 0x80 and not velocity_set:
-        velocity = (param - 0x31)
+        velocity = (param - 0x31) # Remove command offset from value
         velocity *= self.sequence.instrument_map[self.instrument][3]  # Add velocity offset
-        self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4f)
+        self.velocity = lin_to_exp(velocity, b=0.06, in_top=0x4e)
 
         velocity_set = True
         self.index += 1
