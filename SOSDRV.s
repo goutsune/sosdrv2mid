@@ -97,7 +97,7 @@ DSP_CHANNEL  = $0b  ; Defines to which dsp channel should next note be written
 WORK_0C      = $0c
 CUR_DETUNE   = $0d  ; Detune tmp?
 VIBRATO_SPD  = $0e  ; 0 stops processing alltogether
-WORK_0F      = $0f  ; ???
+CALL_STACK   = $0f  ; Call "stack" pointer
 VOLUME_OUT_L = $10  ; $0-7f
 VOLUME_OUT_R = $11  ; ↑
 VOLUME_LEV   = $12  ; Saved when setting volume, used for calculation only
@@ -728,7 +728,7 @@ DirectNoteLen:
 0c09: 5f ad 0b  jmp   AddCmdLenResetNoteTicks
 
 EnterSubroutine:
-0c0c: 8d 0f     mov   y,#WORK_0F
+0c0c: 8d 0f     mov   y,#CALL_STACK
 0c0e: f7 10     mov   a,(CHAN_PTR)+y
 0c10: 9c        dec   a
 0c11: 9c        dec   a
@@ -758,10 +758,10 @@ JumpToAddr:
 0c34: 5f b7 0b  jmp   UpdateSeqPtr
 
 ExitSubroutine:
-0c37: 8d 0f     mov   y,#WORK_0F
+0c37: 8d 0f     mov   y,#CALL_STACK
 0c39: f7 10     mov   a,(CHAN_PTR)+y
-0c3b: 68 40     cmp   a,#$40
-0c3d: b0 f5     bcs   $0c34                 ; jmp   UpdateSeqPtr
+0c3b: 68 40     cmp   a,#$40                ; Do we have anywhere to return to? $40 is our top.
+0c3d: b0 f5     bcs   $0c34                 ; If no, ignore
 0c3f: 2d        push  a
 0c40: bc        inc   a
 0c41: bc        inc   a
